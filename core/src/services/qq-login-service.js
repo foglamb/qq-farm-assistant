@@ -60,6 +60,9 @@ class QqLoginService {
     this.getLaunch = options.getLaunch || (() => nativeLaunch(this.environment));
     this.dataDir = options.dataDir || path.join(getDataDir(), 'qq-login');
     this.maxSessions = Number(options.maxSessions ?? this.environment.QQ_LOGIN_MAX_SESSIONS ?? 3);
+    // Resident mode remains the upstream default. On-demand mode retains only
+    // the durable profile and stops QQ/NapCat after every successful refresh.
+    this.resident = options.resident ?? (this.environment.QQ_LOGIN_RESIDENT !== '0');
     if (!Number.isSafeInteger(this.maxSessions) || this.maxSessions < 1) throw new QqScanError('QQ_LOGIN_MAX_SESSIONS 必须为正整数', 503, 'configuration');
     this.ttlMs = options.ttlMs || 5 * 60 * 1000;
     this.now = options.now || Date.now;
@@ -77,7 +80,7 @@ class QqLoginService {
       this.timer = setInterval(() => this.sweep(), 10000);
       this.timer.unref?.();
     }
-    if (!this.warm) {
+    if (!this.warm && this.resident) {
       try { this.warm = this.launch(); this.prewarmError = ''; }
       catch (error) { this.prewarmError = error instanceof QqScanError ? error.message : 'QQ 扫码组件暂时不可用'; }
     }
@@ -387,10 +390,10 @@ class QqLoginService {
   getAccountState(account) {
     const key = this.accountKey(account);
     const item = this.accountSessions.get(key);
-    if (!item || item.disposed || item.exited || item.sessionIdentity !== this.sessionIdentity(account)) return { state: 'stopped', connected: false };
+    if (!item || item.disposed || item.exited || item.sessionIdentity !== this.sessionIdentity(account)) return { state: 'stopped', connected: false, lifecycle: this.resident ? 'resident' : 'on-demand' };
     const connected = item.nativeOnline === true && !item.stopping && !item.identityChanged;
     const state = item.stopping ? 'stopping' : connected ? 'online' : ['waiting_scan', 'expired', 'login_failed'].includes(item.phase) ? 'needs_rescan' : item.phase === 'starting' ? 'starting' : 'offline';
-    return { state, connected };
+    return { state, connected, lifecycle: this.resident ? 'resident' : 'on-demand' };
   }
 
   async retainAccountSession(item, account) {
@@ -591,6 +594,12 @@ class QqLoginService {
       if (!fs.existsSync(path.join(directory, 'identity.json'))) throw new QqScanError('QQ 登录态已删除或替换，请重新扫码更新', 409, 'rescan');
       completed = true;
       diagnostic('success');
+      if (!this.resident) {
+        // Keep identity.json and qq-data for the next launch, but do not keep
+        // the native QQ/NapCat process resident while the farm is online.
+        this.dispose(item);
+        await this.shutdownForProfile(item);
+      }
       return code;
     } catch (error) {
       // An authorization error does not itself terminate an otherwise healthy

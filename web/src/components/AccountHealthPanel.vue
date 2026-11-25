@@ -22,7 +22,9 @@ const runtimeLabel = computed(() => ({ online: '在线', starting: '连接中', 
 const reconnect = computed(() => online.value ? null : runtime.value?.reconnect)
 const runtimeError = computed(() => online.value ? '' : runtime.value?.error)
 const loginState = computed(() => runtime.value?.login)
-const qqSessionLabel = computed(() => ({ online: '在线', starting: '连接中', offline: '已断开', needs_rescan: '需扫码', stopped: '未启动', stopping: '停止中' } as Record<string, string>)[runtime.value?.qqSession?.state] || '未启动')
+const qqSessionLabel = computed(() => runtime.value?.qqSession?.lifecycle === 'on-demand' && runtime.value?.qqSession?.state === 'stopped'
+  ? '按需待命'
+  : ({ online: '在线', starting: '连接中', offline: '已断开', needs_rescan: '需扫码', stopped: '未启动', stopping: '停止中' } as Record<string, string>)[runtime.value?.qqSession?.state] || '未启动')
 const loginLabel = computed(() => {
   // A completed login attempt is history once the game has connected.
   if (online.value)
