@@ -9,19 +9,28 @@ QQ_URL="${QQ_LOGIN_DEB_URL:-https://qqdl.gtimg.cn/qqfile/QQNT/9.9.36/beta/9ee04b
 NAPCAT_URL="${QQ_LOGIN_NAPCAT_URL:-https://github.com/NapNeko/NapCatQQ/releases/download/v${NAPCAT_VERSION}/NapCat.Shell.zip}"
 work="$(mktemp -d)"
 trap 'rm -rf -- "$work"' EXIT
-curl --fail --location --retry 3 --connect-timeout 25 --max-time 600 "$QQ_URL" -o "$work/qq.deb"
-curl --fail --location --retry 3 --connect-timeout 25 --max-time 600 "$NAPCAT_URL" -o "$work/napcat.zip"
+if [ -z "${QQ_LOGIN_DEB_URL:-}" ] && [ -x /opt/QQ/qq ]; then
+  echo 'Using QQ files from the digest-pinned runtime image'
+else
+  curl --fail --location --retry 3 --connect-timeout 25 --max-time 600 "$QQ_URL" -o "$work/qq.deb"
+  apt-get update
+  apt-get install -y --no-install-recommends "$work/qq.deb"
+fi
+if [ -n "${QQ_LOGIN_NAPCAT_URL:-}" ] || [ ! -f /opt/qq-login/NapCat.Shell.zip ]; then
+  curl --fail --location --retry 3 --connect-timeout 25 --max-time 600 "$NAPCAT_URL" -o "$work/napcat.zip"
+else
+  cp /opt/qq-login/NapCat.Shell.zip "$work/napcat.zip"
+fi
 NAPCAT_SHA="${QQ_LOGIN_NAPCAT_SHA256:-6801f93e533846cea05f4f531874a0e84371ab2331c5585b57cd7e3b869cf96b}"
 printf '%s  %s\n' "$NAPCAT_SHA" "$work/napcat.zip" | sha256sum -c -
-if [ -n "${QQ_LOGIN_DEB_SHA256:-}" ]; then printf '%s  %s\n' "$QQ_LOGIN_DEB_SHA256" "$work/qq.deb" | sha256sum -c -; fi
-# The amd64 official package was checked during integration. ARM64 can provide
-# its own checksum via the same build argument.
-if [ "$QQ_ARCH" = amd64 ] && [ -z "${QQ_LOGIN_DEB_SHA256:-}" ]; then
-  printf '%s  %s\n' '436c65e1dd28422e128a21cbddb5fe4e2e6c079d7f27fec2541e014d38cc336e' "$work/qq.deb" | sha256sum -c -
+if [ -f "$work/qq.deb" ]; then
+  if [ -n "${QQ_LOGIN_DEB_SHA256:-}" ]; then printf '%s  %s\n' "$QQ_LOGIN_DEB_SHA256" "$work/qq.deb" | sha256sum -c -; fi
+  # The amd64 official package was checked during integration. ARM64 can provide
+  # its own checksum via the same build argument.
+  if [ "$QQ_ARCH" = amd64 ] && [ -z "${QQ_LOGIN_DEB_SHA256:-}" ]; then
+    printf '%s  %s\n' '436c65e1dd28422e128a21cbddb5fe4e2e6c079d7f27fec2541e014d38cc336e' "$work/qq.deb" | sha256sum -c -
+  fi
 fi
-# dpkg package dependencies provide the matching native runtime libraries.
-apt-get update
-apt-get install -y --no-install-recommends "$work/qq.deb"
 unzip -q "$work/napcat.zip" -d "$work/napcat"
 entry="$(find "$work/napcat" -name napcat.mjs -print -quit)"
 test -n "$entry"
@@ -42,5 +51,10 @@ fs.copyFileSync('/app/core/qq-login/electron-launcher.cjs','/opt/QQ/resources/ap
 JS
 cp /app/core/qq-login/licenses/NapCat-LICENSE.txt /opt/qq-login/NapCat-LICENSE.txt
 cp /app/core/qq-login/licenses/Node-LICENSE.txt /opt/qq-login/Node-LICENSE.txt
-sha256sum "$work/qq.deb" "$work/napcat.zip" > /opt/qq-login/download-checksums.txt
+if [ -f "$work/qq.deb" ]; then
+  sha256sum "$work/qq.deb" "$work/napcat.zip" > /opt/qq-login/download-checksums.txt
+else
+  sha256sum "$work/napcat.zip" > /opt/qq-login/download-checksums.txt
+  echo 'QQ runtime image: mlikiowa/napcat-docker@sha256:132448a544ed5cfa948dff8ae19e80bf4e17896e8ab2ba1c6cbcd86f8ad3e56e' >> /opt/qq-login/download-checksums.txt
+fi
 find /opt/qq-login -type f -name '*.log' -delete

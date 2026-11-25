@@ -39,6 +39,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/yyb-go .
 # 复制运行时需要的 resource 目录（avatars/qr/templates）
 RUN mkdir -p /out/resource && cp -r /src/resource/. /out/resource/
 
+# ===== 固定版本的 QQ/NapCat 文件源（不包含任何账号资料）=====
+# QQ 3.2.34-53644 + NapCat 4.18.41；摘要固定，避免腾讯 CDN 超时和原 Release 下架。
+FROM mlikiowa/napcat-docker@sha256:132448a544ed5cfa948dff8ae19e80bf4e17896e8ab2ba1c6cbcd86f8ad3e56e AS qq-runtime
+
 # ===== 运行阶段 =====
 FROM node:24-bookworm-slim AS runner
 
@@ -69,6 +73,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # 直接拷贝 builder 全量（含 node_modules），避免 pnpm symlink / 多阶段覆盖坑
 COPY --from=builder /app /app
+
+# 仅复制程序文件；NapCat ZIP 在安装时再次校验 SHA-256。
+COPY --from=qq-runtime /opt/QQ /opt/QQ
+COPY --from=qq-runtime /app/NapCat.Shell.zip /opt/qq-login/NapCat.Shell.zip
 
 # Install only program files into the image; login profiles are created per scan.
 RUN sh /app/core/qq-login/install-linux.sh && \
