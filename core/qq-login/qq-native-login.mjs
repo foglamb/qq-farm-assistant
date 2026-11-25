@@ -58,6 +58,18 @@ export function describeLoginResult(reply) {
   return diagnostic;
 }
 
+export function decodeCodeExpiry(reply) {
+  // Only absolute timestamps are accepted. Durations, QR expiry fields and
+  // opaque strings are not a trustworthy farm-Code TTL.
+  for (const key of ['expiresAt', 'expireAt', 'expireTime']) {
+    const value = Number(reply?.[key]);
+    if (!Number.isFinite(value) || value <= 0) continue;
+    if (value >= 1e12) return Math.trunc(value);
+    if (value >= 1e9) return Math.trunc(value * 1000);
+  }
+  return null;
+}
+
 export function decodeLoginResult(reply) {
   if (!reply || typeof reply !== 'object' || !Number.isInteger(reply.errCode)) {
     throw new QqLoginError('QQ 返回格式与已分析版本不符');
@@ -114,7 +126,9 @@ export async function requestFarmCode(session, {appId = '1112386029', timeoutMs 
       if (error instanceof QqLoginError) throw error;
       throw new QqLoginError('QQ 原生授权调用失败');
     }
-    return {code: decodeLoginResult(reply)};
+    const code = decodeLoginResult(reply);
+    const expiresAt = decodeCodeExpiry(reply);
+    return expiresAt ? {code, expiresAt} : {code};
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener('abort', cancel);
