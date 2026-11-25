@@ -571,7 +571,7 @@ test('QR expiry and window closure detach only the panel handle, preserving the 
   assert.equal(a.item.directory, h.service.profilePath(a.account.qqLoginProfile));
   now = 101; h.service.sweep();
   assert.equal(a.child.exitCode, null);
-  assert.deepEqual(h.service.getAccountState(a.account), { state: 'online', connected: true });
+  assert.deepEqual(h.service.getAccountState(a.account), { state: 'online', connected: true, lifecycle: 'resident', code: null });
   assert.throws(() => h.service.get(a.owner, a.scan.sessionId), { status: 404 });
   assert.equal(h.service.status({ owner: '1002:other' }).residentAccounts, 0);
   assert.equal(h.service.status({ owner: a.owner }).residentAccounts, 1);

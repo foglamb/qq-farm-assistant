@@ -1,6 +1,7 @@
 const path = require('node:path');
 const { createScheduler } = require('../services/scheduler');
 const { createLoginRecovery, LoginRecoveryError, classifyLoginError, loginIdentity, requestDeadline } = require('../services/login-recovery');
+const { classifyHandshakeFailure, CODE_REJECTED } = require('../services/code-lifecycle');
 
 function safeRuntimeError(message) {
     return String(message || '')
@@ -48,6 +49,7 @@ function createWorkerManager(deps) {
     const restartingWorkers = new Map();
     const startupResults = new Map();
     const reconnectPlans = new Map();
+    const credentialFailures = new Map();
     const nativeStops = new Map();
     const loginRecovery = deps.loginRecovery || createLoginRecovery();
 
@@ -70,6 +72,7 @@ function createWorkerManager(deps) {
         const account = getQqSessionState ? require('../models/store').getAccounts().accounts.find(a => String(a.id) === String(accountId)) : null;
         const qqSession = account?.qqLoginProfile && isNativeQq(account) && (account.uin || account.qq) ? getQqSessionState(account) : null;
         return { state, connected, running: !!worker, error: safeRuntimeError(error), updatedAt: last?.updatedAt || null, login: loginRecovery.getState(accountId), qqSession,
+            credential: credentialFailures.get(accountId) || null,
             reconnect: reconnect ? { ...reconnect, reason: safeRuntimeError(reconnect.reason) } : null };
     }
 
@@ -527,6 +530,7 @@ function createWorkerManager(deps) {
         if (resetReconnect) {
             startupResults.delete(accountId);
             reconnectPlans.delete(accountId);
+            credentialFailures.delete(accountId);
         }
         const pending = startingWorkers.get(accountId);
         if (pending) { pending.cancelled = true; pending.controller?.abort(); }
@@ -701,6 +705,7 @@ function createWorkerManager(deps) {
             if (wrk.stopping) return;
             // 状态同步
             const wasConnected = !!wrk.status?.connection?.connected;
+            if (msg.data?.connection?.connected) credentialFailures.delete(accountId);
             wrk.status = normalizeStatusForPanel(msg.data, accountId, wrk.name);
             syncAccountProfile(accountId, msg.data, wrk);
 
@@ -821,19 +826,21 @@ function createWorkerManager(deps) {
             const message = msg.message || '';
             wrk.wsError = { code, message, at: Date.now() };
 
-            // Code 400 = 登录失效（code 过期 / 异地登录）。纳入离线重连调度，
-            // 由 startWorker 在重连前自动刷新 code，而不是永久停止。
+            // HTTP 400 proves credential rejection, not a specific expiry cause.
+            // Refresh Code first; only QQ profile failures may require rescan.
             if (code === 400) {
+                const classification = classifyHandshakeFailure(code) || CODE_REJECTED;
+                credentialFailures.set(accountId, { kind: classification, status: code, at: Date.now() });
                 triggerOfflineReminder({
                     accountId,
                     accountName: wrk.name,
                     reason: 'ws_400',
                     offlineMs: 0
                 });
-                addAccountLog('ws_400',
-                    `账号 ${  wrk.name  } 登录失效，尝试自动重连并刷新 Code`,
-                    accountId, wrk.name);
-                scheduleReconnect(accountId, 'ws_400');
+                addAccountLog(classification,
+                    `账号 ${  wrk.name  } 登录凭据被拒绝 (HTTP ${code})，尝试自动重连并刷新 Code`,
+                    accountId, wrk.name, { status: code });
+                scheduleReconnect(accountId, classification);
             } else {
                 addAccountLog('ws_error',
                     `账号 ${  wrk.name  } 连接错误 (code=${  code  })`,

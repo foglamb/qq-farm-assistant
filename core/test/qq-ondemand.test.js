@@ -22,7 +22,7 @@ function harness(t, resident) {
     await globalThis.__qqFarmLogin.ready({getNodeMiscService:()=>({loginWithAppId:async()=>{
       const count = fs.existsSync(counter) ? Number(fs.readFileSync(counter, 'utf8')) + 1 : 1;
       fs.writeFileSync(counter, String(count));
-      return {errCode:0,result:'fixture_ONDEMAND_CODE_'+count};
+      return {errCode:0,result:'fixture_ONDEMAND_CODE_'+count,expiresAt:1800000000};
     }})},{uin});
   `);
   const children = [];
@@ -58,6 +58,10 @@ test('on-demand mode disables prewarm, releases QQ after each Code and restores 
   assert.equal(service.trackedItems.size, 0);
   assert.equal(service.status({ owner: '1000:test', admin: true }).residentAccounts, 0);
   assert.equal(service.getAccountState(account).lifecycle, 'on-demand');
+  assert.equal(service.getAccountState(account).code.expiresAt, 1800000000000);
+  assert.equal(service.getAccountState(account).code.status, null);
+  const metadataText = fs.readFileSync(path.join(directory, 'code-meta.json'), 'utf8');
+  assert.equal(metadataText.includes('fixture_ONDEMAND_CODE'), false);
   assert.equal(fs.existsSync(path.join(directory, 'identity.json')), true);
   assert.equal(fs.existsSync(path.join(directory, 'qq-data')), true);
 
