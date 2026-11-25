@@ -3,6 +3,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 const { getDataDir, getProgramRoot } = require('../config/runtime-paths');
+const { credentialMetadata } = require('./code-lifecycle');
 
 const PREFIX = Buffer.from('QQFARM_LOGIN:');
 const MAX_LINE = 3 * 1024 * 1024;
@@ -60,6 +61,10 @@ class QqLoginService {
     this.getLaunch = options.getLaunch || (() => nativeLaunch(this.environment));
     this.dataDir = options.dataDir || path.join(getDataDir(), 'qq-login');
     this.maxSessions = Number(options.maxSessions ?? this.environment.QQ_LOGIN_MAX_SESSIONS ?? 3);
+    // Resident mode remains the upstream default. On-demand mode retains only
+    // the durable profile and stops QQ/NapCat after every successful refresh.
+    this.resident = options.resident ?? (this.environment.QQ_LOGIN_RESIDENT !== '0');
+    this.codeMetadataByAccount = new Map();
     if (!Number.isSafeInteger(this.maxSessions) || this.maxSessions < 1) throw new QqScanError('QQ_LOGIN_MAX_SESSIONS 必须为正整数', 503, 'configuration');
     this.ttlMs = options.ttlMs || 5 * 60 * 1000;
     this.now = options.now || Date.now;
@@ -77,7 +82,7 @@ class QqLoginService {
       this.timer = setInterval(() => this.sweep(), 10000);
       this.timer.unref?.();
     }
-    if (!this.warm) {
+    if (!this.warm && this.resident) {
       try { this.warm = this.launch(); this.prewarmError = ''; }
       catch (error) { this.prewarmError = error instanceof QqScanError ? error.message : 'QQ 扫码组件暂时不可用'; }
     }
@@ -222,6 +227,8 @@ class QqLoginService {
         if (item.accountKey && !item.codeResolve && !item.restoring) return;
         clearTimeout(item.startTimer);
         item.code = value.code; item.image = ''; item.phase = 'success'; item.message = '已获取 Code';
+        item.codeIssuedAt = this.now();
+        item.codeExpiresAt = Number.isSafeInteger(value.expiresAt) && value.expiresAt > 0 ? value.expiresAt : null;
         item.nativeOnline = true;
         item.codeResolve?.(value.code);
       }
@@ -384,13 +391,39 @@ class QqLoginService {
       account.proxyMode || 'direct', account.proxyProfileId || null]);
   }
 
+  rememberCodeMetadata(item) {
+    if (!item.accountKey) return;
+    const metadata = credentialMetadata(item.codeIssuedAt, item.codeExpiresAt, this.now());
+    this.codeMetadataByAccount.set(item.accountKey, metadata);
+    // Metadata is diagnostic only. Never write the Code itself to this file.
+    try {
+      fs.writeFileSync(path.join(item.directory, 'code-meta.json'), JSON.stringify(metadata), { mode: 0o600 });
+    } catch (error) {
+      this.log('warn', 'Code 元数据保存失败，不影响本次取码', { error: error.message });
+    }
+  }
+
+  getCodeMetadata(account) {
+    if (!account.qqLoginProfile) return null;
+    const file = path.join(this.profilePath(account.qqLoginProfile), 'code-meta.json');
+    const cached = this.codeMetadataByAccount.get(this.accountKey(account));
+    if (cached && fs.existsSync(file)) return credentialMetadata(cached.issuedAt, cached.expiresAt, this.now());
+    try {
+      const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+      const metadata = credentialMetadata(saved.issuedAt, saved.expiresAt, this.now());
+      this.codeMetadataByAccount.set(this.accountKey(account), metadata);
+      return metadata;
+    } catch { return null; }
+  }
+
   getAccountState(account) {
     const key = this.accountKey(account);
     const item = this.accountSessions.get(key);
-    if (!item || item.disposed || item.exited || item.sessionIdentity !== this.sessionIdentity(account)) return { state: 'stopped', connected: false };
+    const code = this.getCodeMetadata(account);
+    if (!item || item.disposed || item.exited || item.sessionIdentity !== this.sessionIdentity(account)) return { state: 'stopped', connected: false, lifecycle: this.resident ? 'resident' : 'on-demand', code };
     const connected = item.nativeOnline === true && !item.stopping && !item.identityChanged;
     const state = item.stopping ? 'stopping' : connected ? 'online' : ['waiting_scan', 'expired', 'login_failed'].includes(item.phase) ? 'needs_rescan' : item.phase === 'starting' ? 'starting' : 'offline';
-    return { state, connected };
+    return { state, connected, lifecycle: this.resident ? 'resident' : 'on-demand', code };
   }
 
   async retainAccountSession(item, account) {
@@ -421,6 +454,7 @@ class QqLoginService {
   }
 
   async purgeAccount(account) {
+    this.codeMetadataByAccount.delete(this.accountKey(account));
     const profile = account.qqLoginProfile ? this.profilePath(account.qqLoginProfile) : null;
     const uin = String(account.uin || account.qq || '');
     const items = [...this.trackedItems].filter(item =>
@@ -591,6 +625,13 @@ class QqLoginService {
       if (!fs.existsSync(path.join(directory, 'identity.json'))) throw new QqScanError('QQ 登录态已删除或替换，请重新扫码更新', 409, 'rescan');
       completed = true;
       diagnostic('success');
+      this.rememberCodeMetadata(item);
+      if (!this.resident) {
+        // Keep identity.json and qq-data for the next launch, but do not keep
+        // the native QQ/NapCat process resident while the farm is online.
+        this.dispose(item);
+        await this.shutdownForProfile(item);
+      }
       return code;
     } catch (error) {
       // An authorization error does not itself terminate an otherwise healthy

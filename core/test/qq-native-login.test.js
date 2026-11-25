@@ -67,6 +67,17 @@ test('invalid native results expose structure without private values or arbitrar
   assert.equal(describeLoginResult({ errCode: 0 }).resultType, 'undefined');
 });
 
+test('native Code TTL accepts only absolute timestamps and preserves seconds or milliseconds', async () => {
+  const { decodeCodeExpiry, requestFarmCode } = await adapter;
+  assert.equal(decodeCodeExpiry({ errCode: 0, result: code, expiresAt: 1800000000 }), 1800000000000);
+  assert.equal(decodeCodeExpiry({ errCode: 0, result: code, expireAt: 1800000000000 }), 1800000000000);
+  assert.equal(decodeCodeExpiry({ errCode: 0, result: code, expireTime: 1800000000 }), 1800000000000);
+  for (const value of [0, -1, 60, 3600, Number.NaN, Number.POSITIVE_INFINITY, 'invalid']) {
+    assert.equal(decodeCodeExpiry({ errCode: 0, result: code, expiresAt: value }), null);
+  }
+  const session = { getNodeMiscService: () => ({ loginWithAppId: async () => ({ errCode: 0, result: code, expiresAt: 1800000000 }) }) };
+  assert.deepEqual(await requestFarmCode(session), { code, expiresAt: 1800000000000 });
+});
 test('native authorization is attempted once and honors timeout and cancellation', async () => {
   const { requestFarmCode } = await adapter;
   const calls = [];

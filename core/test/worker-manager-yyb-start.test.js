@@ -132,9 +132,14 @@ test('native QQ reconnection refreshes its own credentials with WX reconnect dis
   assert.equal(h.created[0].messages[0].config.code, 'fixture_QQ_FRESH_CODE_12345671');
   h.created[0].emit('message', { type: 'ws_error', code: 400, message: 1004 });
   assert.equal(h.manager.getWorkerRuntime('qq-1').state, 'reconnecting');
+  assert.equal(h.manager.getWorkerRuntime('qq-1').credential.kind, 'code_rejected');
+  assert.equal(h.manager.getWorkerRuntime('qq-1').credential.status, 400);
+  assert(messages.some(message => message.includes('登录凭据被拒绝')));
   t.mock.timers.tick(60000); await setImmediate();
   assert.equal(refreshes, 2); assert.equal(yybCalls, 0); assert.equal(saved.length, 2);
   assert.equal(h.created[1].messages[0].config.code, 'fixture_QQ_FRESH_CODE_12345672');
+  h.created[1].emit('message', { type: 'status_sync', data: { connection: { connected: true }, status: {} } });
+  assert.equal(h.manager.getWorkerRuntime('qq-1').credential, null);
   assert(messages.some(message => message.includes('QQ 原生登录态重连')));
   assert(!messages.some(message => message.includes('应用宝')));
 });
