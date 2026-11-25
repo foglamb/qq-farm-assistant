@@ -1,0 +1,22 @@
+name: apply-reviewed-snapshot
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/ondemand-qq-v2
+          fetch-depth: 0
+      - run: git apply --check .github/patches/remaining.patch
+      - run: git apply .github/patches/remaining.patch
+      - run: git diff --check
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add core/src/runtime/worker-manager.js core/src/services/qq-login-service.js core/test/code-lifecycle.test.js core/test/qq-login-service.test.js core/test/qq-native-login.test.js core/test/qq-ondemand.test.js core/test/worker-manager-yyb-start.test.js
+          git commit -m "feat: complete Code lifecycle implementation and tests"
+          git push origin feature/ondemand-qq-v2
