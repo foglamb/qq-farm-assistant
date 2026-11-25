@@ -40,8 +40,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/yyb-go .
 RUN mkdir -p /out/resource && cp -r /src/resource/. /out/resource/
 
 # ===== 固定版本的 QQ/NapCat 文件源（不包含任何账号资料）=====
-# QQ 3.2.34-53644 + NapCat 4.18.41；摘要固定，避免腾讯 CDN 超时和原 Release 下架。
-FROM mlikiowa/napcat-docker@sha256:132448a544ed5cfa948dff8ae19e80bf4e17896e8ab2ba1c6cbcd86f8ad3e56e AS qq-runtime
+# QQ + NapCat 4.18.42；由 GitHub Actions 校验归档后推入用户 GHCR。
+FROM ghcr.io/foglamb/qq-farm-assistant-runtime:4.18.42 AS qq-runtime
 
 # ===== 运行阶段 =====
 FROM node:24-bookworm-slim AS runner
@@ -60,7 +60,7 @@ ENV QQ_LOGIN_ENABLED=1 \
 ARG QQ_LOGIN_DEB_URL=
 ARG QQ_LOGIN_DEB_SHA256=
 ARG QQ_LOGIN_NAPCAT_URL=
-ARG QQ_LOGIN_NAPCAT_SHA256=6801f93e533846cea05f4f531874a0e84371ab2331c5585b57cd7e3b869cf96b
+ARG QQ_LOGIN_NAPCAT_SHA256=02e5ff0f79916c1e04c81c1b4590056406fb4293f1f1300c955e71fd08b2829d
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tzdata tini ca-certificates curl unzip xvfb xauth x11-utils \
