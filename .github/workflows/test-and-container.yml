@@ -48,6 +48,19 @@ jobs:
             type=ref,event=branch
             type=sha,format=short
             type=raw,value=ondemand,enable=${{ startsWith(github.ref, 'refs/heads/feature/') }}
+      - name: Verify and publish the pinned QQ runtime
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --connect-timeout 20 --max-time 900 \
+            https://github.com/XingYunStar/NapCatQQ/releases/download/v4.18.42/napcat-docker-v4.18.42-amd64.tar \
+            -o /tmp/napcat-runtime.tar
+          echo '85e3fd02b58fd836a0177734b6ff77a896000bcfcf209b3b200d7e8b8452df7c  /tmp/napcat-runtime.tar' | sha256sum -c -
+          IMAGE_ID="$(docker load -i /tmp/napcat-runtime.tar | awk '/Loaded image:/ {print $3; exit}')"
+          test -n "$IMAGE_ID"
+          docker run --rm --entrypoint /bin/sh "$IMAGE_ID" -c \
+            'test -x /opt/QQ/qq && printf "%s  %s\n" 02e5ff0f79916c1e04c81c1b4590056406fb4293f1f1300c955e71fd08b2829d /app/NapCat.Shell.zip | sha256sum -c -'
+          docker tag "$IMAGE_ID" ghcr.io/foglamb/qq-farm-assistant-runtime:4.18.42
+          docker push ghcr.io/foglamb/qq-farm-assistant-runtime:4.18.42
       - uses: docker/build-push-action@v6
         with:
           context: .
