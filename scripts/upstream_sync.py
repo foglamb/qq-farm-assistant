@@ -24,7 +24,13 @@ def main() -> int:
     args = parser.parse_args()
     target = f"{args.remote}/{args.branch}"
 
-    run("git", "fetch", args.remote, args.branch)
+    fetched = run("git", "fetch", args.remote, args.branch, check=False)
+    if fetched.returncode:
+        print("首次拉取失败，改用 HTTP/1.1 重试。", file=sys.stderr)
+        fetched = run("git", "-c", "http.version=HTTP/1.1", "fetch", args.remote, args.branch, check=False)
+    if fetched.returncode:
+        print("上游拉取失败：未合并、未测试、未提交，请检查网络后重试。", file=sys.stderr)
+        return 1
     local = output("git", "rev-parse", "HEAD")
     remote = output("git", "rev-parse", target)
     ahead, behind = output("git", "rev-list", "--left-right", "--count", f"HEAD...{target}").split()
