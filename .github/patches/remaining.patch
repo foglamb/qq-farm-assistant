@@ -1,0 +1,355 @@
+diff --git a/core/src/runtime/worker-manager.js b/core/src/runtime/worker-manager.js
+index 7441a9e..5e9d7a8 100644
+--- a/core/src/runtime/worker-manager.js
++++ b/core/src/runtime/worker-manager.js
+@@ -1,6 +1,7 @@
+ const path = require('node:path');
+ const { createScheduler } = require('../services/scheduler');
+ const { createLoginRecovery, LoginRecoveryError, classifyLoginError, loginIdentity, requestDeadline } = require('../services/login-recovery');
++const { classifyHandshakeFailure, CODE_REJECTED } = require('../services/code-lifecycle');
+ 
+ function safeRuntimeError(message) {
+     return String(message || '')
+@@ -48,6 +49,7 @@ function createWorkerManager(deps) {
+     const restartingWorkers = new Map();
+     const startupResults = new Map();
+     const reconnectPlans = new Map();
++    const credentialFailures = new Map();
+     const nativeStops = new Map();
+     const loginRecovery = deps.loginRecovery || createLoginRecovery();
+ 
+@@ -70,6 +72,7 @@ function createWorkerManager(deps) {
+         const account = getQqSessionState ? require('../models/store').getAccounts().accounts.find(a => String(a.id) === String(accountId)) : null;
+         const qqSession = account?.qqLoginProfile && isNativeQq(account) && (account.uin || account.qq) ? getQqSessionState(account) : null;
+         return { state, connected, running: !!worker, error: safeRuntimeError(error), updatedAt: last?.updatedAt || null, login: loginRecovery.getState(accountId), qqSession,
++            credential: credentialFailures.get(accountId) || null,
+             reconnect: reconnect ? { ...reconnect, reason: safeRuntimeError(reconnect.reason) } : null };
+     }
+ 
+@@ -527,6 +530,7 @@ function createWorkerManager(deps) {
+         if (resetReconnect) {
+             startupResults.delete(accountId);
+             reconnectPlans.delete(accountId);
++            credentialFailures.delete(accountId);
+         }
+         const pending = startingWorkers.get(accountId);
+         if (pending) { pending.cancelled = true; pending.controller?.abort(); }
+@@ -701,6 +705,7 @@ function createWorkerManager(deps) {
+             if (wrk.stopping) return;
+             // 状态同步
+             const wasConnected = !!wrk.status?.connection?.connected;
++            if (msg.data?.connection?.connected) credentialFailures.delete(accountId);
+             wrk.status = normalizeStatusForPanel(msg.data, accountId, wrk.name);
+             syncAccountProfile(accountId, msg.data, wrk);
+ 
+@@ -821,19 +826,21 @@ function createWorkerManager(deps) {
+             const message = msg.message || '';
+             wrk.wsError = { code, message, at: Date.now() };
+ 
+-            // Code 400 = 登录失效（code 过期 / 异地登录）。纳入离线重连调度，
+-            // 由 startWorker 在重连前自动刷新 code，而不是永久停止。
++            // HTTP 400 proves credential rejection, not a specific expiry cause.
++            // Refresh Code first; only QQ profile failures may require rescan.
+             if (code === 400) {
++                const classification = classifyHandshakeFailure(code) || CODE_REJECTED;
++                credentialFailures.set(accountId, { kind: classification, status: code, at: Date.now() });
+                 triggerOfflineReminder({
+                     accountId,
+                     accountName: wrk.name,
+                     reason: 'ws_400',
+                     offlineMs: 0
+                 });
+-                addAccountLog('ws_400',
+-                    `账号 ${  wrk.name  } 登录失效，尝试自动重连并刷新 Code`,
+-                    accountId, wrk.name);
+-                scheduleReconnect(accountId, 'ws_400');
++                addAccountLog(classification,
++                    `账号 ${  wrk.name  } 登录凭据被拒绝 (HTTP ${code})，尝试自动重连并刷新 Code`,
++                    accountId, wrk.name, { status: code });
++                scheduleReconnect(accountId, classification);
+             } else {
+                 addAccountLog('ws_error',
+                     `账号 ${  wrk.name  } 连接错误 (code=${  code  })`,
+diff --git a/core/src/services/qq-login-service.js b/core/src/services/qq-login-service.js
+index ff3ad46..eae4210 100644
+--- a/core/src/services/qq-login-service.js
++++ b/core/src/services/qq-login-service.js
+@@ -3,6 +3,7 @@ const path = require('node:path');
+ const crypto = require('node:crypto');
+ const { spawn } = require('node:child_process');
+ const { getDataDir, getProgramRoot } = require('../config/runtime-paths');
++const { credentialMetadata } = require('./code-lifecycle');
+ 
+ const PREFIX = Buffer.from('QQFARM_LOGIN:');
+ const MAX_LINE = 3 * 1024 * 1024;
+@@ -60,6 +61,10 @@ class QqLoginService {
+     this.getLaunch = options.getLaunch || (() => nativeLaunch(this.environment));
+     this.dataDir = options.dataDir || path.join(getDataDir(), 'qq-login');
+     this.maxSessions = Number(options.maxSessions ?? this.environment.QQ_LOGIN_MAX_SESSIONS ?? 3);
++    // Resident mode remains the upstream default. On-demand mode retains only
++    // the durable profile and stops QQ/NapCat after every successful refresh.
++    this.resident = options.resident ?? (this.environment.QQ_LOGIN_RESIDENT !== '0');
++    this.codeMetadataByAccount = new Map();
+     if (!Number.isSafeInteger(this.maxSessions) || this.maxSessions < 1) throw new QqScanError('QQ_LOGIN_MAX_SESSIONS 必须为正整数', 503, 'configuration');
+     this.ttlMs = options.ttlMs || 5 * 60 * 1000;
+     this.now = options.now || Date.now;
+@@ -77,7 +82,7 @@ class QqLoginService {
+       this.timer = setInterval(() => this.sweep(), 10000);
+       this.timer.unref?.();
+     }
+-    if (!this.warm) {
++    if (!this.warm && this.resident) {
+       try { this.warm = this.launch(); this.prewarmError = ''; }
+       catch (error) { this.prewarmError = error instanceof QqScanError ? error.message : 'QQ 扫码组件暂时不可用'; }
+     }
+@@ -222,6 +227,8 @@ class QqLoginService {
+         if (item.accountKey && !item.codeResolve && !item.restoring) return;
+         clearTimeout(item.startTimer);
+         item.code = value.code; item.image = ''; item.phase = 'success'; item.message = '已获取 Code';
++        item.codeIssuedAt = this.now();
++        item.codeExpiresAt = Number.isSafeInteger(value.expiresAt) && value.expiresAt > 0 ? value.expiresAt : null;
+         item.nativeOnline = true;
+         item.codeResolve?.(value.code);
+       }
+@@ -384,13 +391,39 @@ class QqLoginService {
+       account.proxyMode || 'direct', account.proxyProfileId || null]);
+   }
+ 
++  rememberCodeMetadata(item) {
++    if (!item.accountKey) return;
++    const metadata = credentialMetadata(item.codeIssuedAt, item.codeExpiresAt, this.now());
++    this.codeMetadataByAccount.set(item.accountKey, metadata);
++    // Metadata is diagnostic only. Never write the Code itself to this file.
++    try {
++      fs.writeFileSync(path.join(item.directory, 'code-meta.json'), JSON.stringify(metadata), { mode: 0o600 });
++    } catch (error) {
++      this.log('warn', 'Code 元数据保存失败，不影响本次取码', { error: error.message });
++    }
++  }
++
++  getCodeMetadata(account) {
++    if (!account.qqLoginProfile) return null;
++    const file = path.join(this.profilePath(account.qqLoginProfile), 'code-meta.json');
++    const cached = this.codeMetadataByAccount.get(this.accountKey(account));
++    if (cached && fs.existsSync(file)) return credentialMetadata(cached.issuedAt, cached.expiresAt, this.now());
++    try {
++      const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
++      const metadata = credentialMetadata(saved.issuedAt, saved.expiresAt, this.now());
++      this.codeMetadataByAccount.set(this.accountKey(account), metadata);
++      return metadata;
++    } catch { return null; }
++  }
++
+   getAccountState(account) {
+     const key = this.accountKey(account);
+     const item = this.accountSessions.get(key);
+-    if (!item || item.disposed || item.exited || item.sessionIdentity !== this.sessionIdentity(account)) return { state: 'stopped', connected: false };
++    const code = this.getCodeMetadata(account);
++    if (!item || item.disposed || item.exited || item.sessionIdentity !== this.sessionIdentity(account)) return { state: 'stopped', connected: false, lifecycle: this.resident ? 'resident' : 'on-demand', code };
+     const connected = item.nativeOnline === true && !item.stopping && !item.identityChanged;
+     const state = item.stopping ? 'stopping' : connected ? 'online' : ['waiting_scan', 'expired', 'login_failed'].includes(item.phase) ? 'needs_rescan' : item.phase === 'starting' ? 'starting' : 'offline';
+-    return { state, connected };
++    return { state, connected, lifecycle: this.resident ? 'resident' : 'on-demand', code };
+   }
+ 
+   async retainAccountSession(item, account) {
+@@ -421,6 +454,7 @@ class QqLoginService {
+   }
+ 
+   async purgeAccount(account) {
++    this.codeMetadataByAccount.delete(this.accountKey(account));
+     const profile = account.qqLoginProfile ? this.profilePath(account.qqLoginProfile) : null;
+     const uin = String(account.uin || account.qq || '');
+     const items = [...this.trackedItems].filter(item =>
+@@ -591,6 +625,13 @@ class QqLoginService {
+       if (!fs.existsSync(path.join(directory, 'identity.json'))) throw new QqScanError('QQ 登录态已删除或替换，请重新扫码更新', 409, 'rescan');
+       completed = true;
+       diagnostic('success');
++      this.rememberCodeMetadata(item);
++      if (!this.resident) {
++        // Keep identity.json and qq-data for the next launch, but do not keep
++        // the native QQ/NapCat process resident while the farm is online.
++        this.dispose(item);
++        await this.shutdownForProfile(item);
++      }
+       return code;
+     } catch (error) {
+       // An authorization error does not itself terminate an otherwise healthy
+diff --git a/core/test/code-lifecycle.test.js b/core/test/code-lifecycle.test.js
+new file mode 100644
+index 0000000..122fbf3
+--- /dev/null
++++ b/core/test/code-lifecycle.test.js
+@@ -0,0 +1,21 @@
++const test = require('node:test');
++const assert = require('node:assert/strict');
++const { CODE_EXPIRED, CODE_REJECTED, RESCAN_REQUIRED, classifyHandshakeFailure, credentialMetadata } = require('../src/services/code-lifecycle');
++
++test('only an explicit absolute TTL proves time-based Code expiry', () => {
++  const now = 1800000000000;
++  assert.deepEqual(credentialMetadata(now - 1000, now + 1000, now), { issuedAt: now - 1000, expiresAt: now + 1000, status: null });
++  assert.equal(credentialMetadata(now - 1000, now, now).status, CODE_EXPIRED);
++  assert.equal(credentialMetadata(now - 1000, now - 1, now).status, CODE_EXPIRED);
++  assert.equal(credentialMetadata(now, null, now).status, null);
++});
++
++test('HTTP 400 is Code rejection, while transport failures are not mislabeled as expiry', () => {
++  assert.equal(classifyHandshakeFailure(400), CODE_REJECTED);
++  for (const value of [1006, 401, 403, 500, 0, '400', null, undefined]) {
++    if (value === '400') assert.equal(classifyHandshakeFailure(value), CODE_REJECTED);
++    else assert.equal(classifyHandshakeFailure(value), null);
++  }
++  assert.notEqual(CODE_REJECTED, CODE_EXPIRED);
++  assert.notEqual(RESCAN_REQUIRED, CODE_EXPIRED);
++});
+diff --git a/core/test/qq-login-service.test.js b/core/test/qq-login-service.test.js
+index d5d1835..2534549 100644
+--- a/core/test/qq-login-service.test.js
++++ b/core/test/qq-login-service.test.js
+@@ -571,7 +571,7 @@ test('QR expiry and window closure detach only the panel handle, preserving the
+   assert.equal(a.item.directory, h.service.profilePath(a.account.qqLoginProfile));
+   now = 101; h.service.sweep();
+   assert.equal(a.child.exitCode, null);
+-  assert.deepEqual(h.service.getAccountState(a.account), { state: 'online', connected: true });
++  assert.deepEqual(h.service.getAccountState(a.account), { state: 'online', connected: true, lifecycle: 'resident', code: null });
+   assert.throws(() => h.service.get(a.owner, a.scan.sessionId), { status: 404 });
+   assert.equal(h.service.status({ owner: '1002:other' }).residentAccounts, 0);
+   assert.equal(h.service.status({ owner: a.owner }).residentAccounts, 1);
+diff --git a/core/test/qq-native-login.test.js b/core/test/qq-native-login.test.js
+index c8c6fae..79d036f 100644
+--- a/core/test/qq-native-login.test.js
++++ b/core/test/qq-native-login.test.js
+@@ -67,6 +67,17 @@ test('invalid native results expose structure without private values or arbitrar
+   assert.equal(describeLoginResult({ errCode: 0 }).resultType, 'undefined');
+ });
+ 
++test('native Code TTL accepts only absolute timestamps and preserves seconds or milliseconds', async () => {
++  const { decodeCodeExpiry, requestFarmCode } = await adapter;
++  assert.equal(decodeCodeExpiry({ errCode: 0, result: code, expiresAt: 1800000000 }), 1800000000000);
++  assert.equal(decodeCodeExpiry({ errCode: 0, result: code, expireAt: 1800000000000 }), 1800000000000);
++  assert.equal(decodeCodeExpiry({ errCode: 0, result: code, expireTime: 1800000000 }), 1800000000000);
++  for (const value of [0, -1, 60, 3600, Number.NaN, Number.POSITIVE_INFINITY, 'invalid']) {
++    assert.equal(decodeCodeExpiry({ errCode: 0, result: code, expiresAt: value }), null);
++  }
++  const session = { getNodeMiscService: () => ({ loginWithAppId: async () => ({ errCode: 0, result: code, expiresAt: 1800000000 }) }) };
++  assert.deepEqual(await requestFarmCode(session), { code, expiresAt: 1800000000000 });
++});
+ test('native authorization is attempted once and honors timeout and cancellation', async () => {
+   const { requestFarmCode } = await adapter;
+   const calls = [];
+diff --git a/core/test/qq-ondemand.test.js b/core/test/qq-ondemand.test.js
+new file mode 100644
+index 0000000..ab0915a
+--- /dev/null
++++ b/core/test/qq-ondemand.test.js
+@@ -0,0 +1,91 @@
++const test = require('node:test');
++const assert = require('node:assert/strict');
++const crypto = require('node:crypto');
++const fs = require('node:fs');
++const os = require('node:os');
++const path = require('node:path');
++const { QqLoginService } = require('../src/services/qq-login-service');
++
++function harness(t, resident) {
++  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'farm-ondemand-'));
++  const runtime = path.join(root, 'runtime');
++  fs.mkdirSync(path.join(runtime, 'napcat'), { recursive: true });
++  // Run the real host/service. Only QQ's proprietary native implementation is
++  // replaced by this deterministic, offline fixture.
++  fs.writeFileSync(path.join(runtime, 'napcat', 'napcat.mjs'), `
++    import fs from 'node:fs';
++    import path from 'node:path';
++    const data = process.env.FARM_QQ_SESSION_DIR;
++    fs.mkdirSync(path.join(data, 'qq-data'), {recursive:true});
++    const counter = path.join(data, 'qq-data', 'requests');
++    const uin = process.env.FARM_QQ_RESTORE_UIN || '12345678';
++    await globalThis.__qqFarmLogin.ready({getNodeMiscService:()=>({loginWithAppId:async()=>{
++      const count = fs.existsSync(counter) ? Number(fs.readFileSync(counter, 'utf8')) + 1 : 1;
++      fs.writeFileSync(counter, String(count));
++      return {errCode:0,result:'fixture_ONDEMAND_CODE_'+count,expiresAt:1800000000};
++    }})},{uin});
++  `);
++  const children = [];
++  const service = new QqLoginService({
++    dataDir: path.join(root, 'data'),
++    environment: { QQ_LOGIN_RESIDENT: resident ? '1' : '0' },
++    resolveProxy: async () => '',
++    getLaunch: () => ({ runtime, host: path.resolve(__dirname, '../qq-login/host.mjs'), executable: process.execPath }),
++    spawn(file, args, config) { const child = require('node:child_process').spawn(file, args, config); child.config = config; children.push(child); return child; },
++  });
++  t.after(async () => {
++    service.close();
++    for (const child of children) if (child.exitCode === null) child.kill();
++    fs.rmSync(root, { recursive: true, force: true });
++  });
++  const profile = crypto.randomUUID();
++  const directory = service.profilePath(profile);
++  fs.mkdirSync(path.join(directory, 'qq-data'), { recursive: true });
++  fs.writeFileSync(path.join(directory, 'identity.json'), JSON.stringify({ userId: 1000, uin: '12345678' }));
++  const account = { id: '1', userId: 1000, uin: '12345678', platform: 'qq', qqLoginProfile: profile };
++  return { service, children, account, directory };
++}
++
++test('on-demand mode disables prewarm, releases QQ after each Code and restores the same profile', async t => {
++  const { service, children, account, directory } = harness(t, false);
++  service.start();
++  assert.equal(children.length, 0, 'no QQ process is prewarmed');
++
++  assert.equal(await service.refreshAccountCode(account), 'fixture_ONDEMAND_CODE_1');
++  assert.equal(children.length, 1);
++  assert.equal(children[0].exitCode, 0);
++  assert.equal(service.accountSessions.size, 0);
++  assert.equal(service.trackedItems.size, 0);
++  assert.equal(service.status({ owner: '1000:test', admin: true }).residentAccounts, 0);
++  assert.equal(service.getAccountState(account).lifecycle, 'on-demand');
++  assert.equal(service.getAccountState(account).code.expiresAt, 1800000000000);
++  assert.equal(service.getAccountState(account).code.status, null);
++  const metadataText = fs.readFileSync(path.join(directory, 'code-meta.json'), 'utf8');
++  assert.equal(metadataText.includes('fixture_ONDEMAND_CODE'), false);
++  assert.equal(fs.existsSync(path.join(directory, 'identity.json')), true);
++  assert.equal(fs.existsSync(path.join(directory, 'qq-data')), true);
++
++  assert.equal(await service.refreshAccountCode(account), 'fixture_ONDEMAND_CODE_2');
++  assert.equal(children.length, 2, 'the next renewal starts a fresh helper');
++  assert.equal(children[1].exitCode, 0);
++  assert.equal(service.accountSessions.size, 0);
++  assert.equal(fs.readFileSync(path.join(directory, 'qq-data', 'requests'), 'utf8'), '2');
++  assert.equal(children[1].config.env.FARM_QQ_SESSION_DIR, directory);
++});
++
++test('default resident mode retains upstream process reuse behavior', async t => {
++  const { service, children, account } = harness(t, true);
++  service.start();
++  assert.equal(children.length, 1, 'upstream prewarm remains enabled');
++  assert.equal(await service.refreshAccountCode(account), 'fixture_ONDEMAND_CODE_1');
++  assert.equal(children.length, 2, 'the prewarmed process is replaced during restore');
++  assert.equal(children[1].exitCode, null);
++  assert.equal(service.accountSessions.size, 1);
++  assert.equal(service.getAccountState(account).state, 'online');
++
++  assert.equal(await service.refreshAccountCode(account), 'fixture_ONDEMAND_CODE_2');
++  assert.equal(children.length, 2, 'resident mode reuses the same QQ process');
++  assert.equal(children[1].exitCode, null);
++  await service.stopAccount(account);
++  assert.equal(children[1].exitCode, 0);
++});
+diff --git a/core/test/worker-manager-yyb-start.test.js b/core/test/worker-manager-yyb-start.test.js
+index 4c41e2b..4be2b2e 100644
+--- a/core/test/worker-manager-yyb-start.test.js
++++ b/core/test/worker-manager-yyb-start.test.js
+@@ -132,9 +132,14 @@ test('native QQ reconnection refreshes its own credentials with WX reconnect dis
+   assert.equal(h.created[0].messages[0].config.code, 'fixture_QQ_FRESH_CODE_12345671');
+   h.created[0].emit('message', { type: 'ws_error', code: 400, message: 1004 });
+   assert.equal(h.manager.getWorkerRuntime('qq-1').state, 'reconnecting');
++  assert.equal(h.manager.getWorkerRuntime('qq-1').credential.kind, 'code_rejected');
++  assert.equal(h.manager.getWorkerRuntime('qq-1').credential.status, 400);
++  assert(messages.some(message => message.includes('登录凭据被拒绝')));
+   t.mock.timers.tick(60000); await setImmediate();
+   assert.equal(refreshes, 2); assert.equal(yybCalls, 0); assert.equal(saved.length, 2);
+   assert.equal(h.created[1].messages[0].config.code, 'fixture_QQ_FRESH_CODE_12345672');
++  h.created[1].emit('message', { type: 'status_sync', data: { connection: { connected: true }, status: {} } });
++  assert.equal(h.manager.getWorkerRuntime('qq-1').credential, null);
+   assert(messages.some(message => message.includes('QQ 原生登录态重连')));
+   assert(!messages.some(message => message.includes('应用宝')));
+ });
