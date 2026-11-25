@@ -26,9 +26,7 @@ FROM golang:1.23-alpine AS yyb-builder
 
 WORKDIR /src
 
-# yyb-go 源码已预置到构建上下文根目录的 yyb-go/（服务器无法直连 github.com，故不走 git clone）。
-# 保留 ARG 声明以避免 docker-compose 传入 GITHUB_TOKEN 时构建报 "build-arg not defined"。
-ARG GITHUB_TOKEN=
+# yyb-go 源码已预置到构建上下文根目录的 yyb-go/，构建不读取 GitHub 凭据。
 COPY yyb-go /src
 
 # 纯 Go 实现（modernc sqlite，无需 CGO），静态编译；使用国内 goproxy 加速依赖拉取

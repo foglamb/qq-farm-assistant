@@ -4,13 +4,11 @@ services:
       context: .
       dockerfile: core/Dockerfile
       args:
-        # 可选：yyb-go 为私有仓库时传入具备 read 权限的 token；公开仓库留空即可
-        - GITHUB_TOKEN=${GITHUB_TOKEN:-}
         # Optional mirrors; keep the matching checksum when changing a URL.
         - QQ_LOGIN_DEB_URL=${QQ_LOGIN_DEB_URL:-}
         - QQ_LOGIN_DEB_SHA256=${QQ_LOGIN_DEB_SHA256:-}
         - QQ_LOGIN_NAPCAT_URL=${QQ_LOGIN_NAPCAT_URL:-}
-        - QQ_LOGIN_NAPCAT_SHA256=${QQ_LOGIN_NAPCAT_SHA256:-6801f93e533846cea05f4f531874a0e84371ab2331c5585b57cd7e3b869cf96b}
+        - QQ_LOGIN_NAPCAT_SHA256=${QQ_LOGIN_NAPCAT_SHA256:-02e5ff0f79916c1e04c81c1b4590056406fb4293f1f1300c955e71fd08b2829d}
     image: qq-farm-bot:latest
     container_name: qq-farm-bot
     restart: unless-stopped
