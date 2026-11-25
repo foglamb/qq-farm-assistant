@@ -1,12 +1,12 @@
 #!/bin/sh
 # Build-time installation into a disposable Docker image. No account data.
 set -eu
-NAPCAT_VERSION=4.18.41
+NAPCAT_VERSION=4.18.42
 QQ_VERSION=3.2.34-53644
 QQ_ARCH="$(dpkg --print-architecture)"
 case "$QQ_ARCH" in amd64|arm64) ;; *) echo 'QQ scan supports amd64/arm64 Linux images only' >&2; exit 1;; esac
 QQ_URL="${QQ_LOGIN_DEB_URL:-https://qqdl.gtimg.cn/qqfile/QQNT/9.9.36/beta/9ee04bef/linuxqq_${QQ_VERSION}_${QQ_ARCH}.deb}"
-NAPCAT_URL="${QQ_LOGIN_NAPCAT_URL:-https://github.com/NapNeko/NapCatQQ/releases/download/v${NAPCAT_VERSION}/NapCat.Shell.zip}"
+NAPCAT_URL="${QQ_LOGIN_NAPCAT_URL:-https://github.com/XingYunStar/NapCatQQ/releases/download/v${NAPCAT_VERSION}/NapCat.Shell.zip}"
 work="$(mktemp -d)"
 trap 'rm -rf -- "$work"' EXIT
 if [ -z "${QQ_LOGIN_DEB_URL:-}" ] && [ -x /opt/QQ/qq ]; then
@@ -21,7 +21,7 @@ if [ -n "${QQ_LOGIN_NAPCAT_URL:-}" ] || [ ! -f /opt/qq-login/NapCat.Shell.zip ];
 else
   cp /opt/qq-login/NapCat.Shell.zip "$work/napcat.zip"
 fi
-NAPCAT_SHA="${QQ_LOGIN_NAPCAT_SHA256:-6801f93e533846cea05f4f531874a0e84371ab2331c5585b57cd7e3b869cf96b}"
+NAPCAT_SHA="${QQ_LOGIN_NAPCAT_SHA256:-02e5ff0f79916c1e04c81c1b4590056406fb4293f1f1300c955e71fd08b2829d}"
 printf '%s  %s\n' "$NAPCAT_SHA" "$work/napcat.zip" | sha256sum -c -
 if [ -f "$work/qq.deb" ]; then
   if [ -n "${QQ_LOGIN_DEB_SHA256:-}" ]; then printf '%s  %s\n' "$QQ_LOGIN_DEB_SHA256" "$work/qq.deb" | sha256sum -c -; fi
@@ -55,6 +55,6 @@ if [ -f "$work/qq.deb" ]; then
   sha256sum "$work/qq.deb" "$work/napcat.zip" > /opt/qq-login/download-checksums.txt
 else
   sha256sum "$work/napcat.zip" > /opt/qq-login/download-checksums.txt
-  echo 'QQ runtime image: mlikiowa/napcat-docker@sha256:132448a544ed5cfa948dff8ae19e80bf4e17896e8ab2ba1c6cbcd86f8ad3e56e' >> /opt/qq-login/download-checksums.txt
+  echo 'QQ runtime image: ghcr.io/foglamb/qq-farm-assistant-runtime:4.18.42 (archived tar SHA-256 85e3fd02b58fd836a0177734b6ff77a896000bcfcf209b3b200d7e8b8452df7c)' >> /opt/qq-login/download-checksums.txt
 fi
 find /opt/qq-login -type f -name '*.log' -delete
