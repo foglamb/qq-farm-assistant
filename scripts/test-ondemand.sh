@@ -9,6 +9,7 @@ if [ -n "${QQ_FARM_TEST_NODE_PATH:-}" ]; then
 fi
 node --require ./core/test/setup.cjs --test \
   core/test/code-lifecycle.test.js \
+  core/test/napcat-patch.test.js \
   core/test/qq-native-login.test.js \
   core/test/qq-login-service.test.js \
   core/test/qq-ondemand.test.js \
