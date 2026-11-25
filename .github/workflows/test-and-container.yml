@@ -2,7 +2,7 @@ name: test-and-container
 
 on:
   push:
-    branches: [main, feature/ondemand-qq]
+    branches: [main, 'feature/**']
     tags: ['v*']
   workflow_dispatch:
 
@@ -47,7 +47,7 @@ jobs:
           tags: |
             type=ref,event=branch
             type=sha,format=short
-            type=raw,value=ondemand,enable=${{ github.ref == 'refs/heads/feature/ondemand-qq' }}
+            type=raw,value=ondemand,enable=${{ startsWith(github.ref, 'refs/heads/feature/') }}
       - uses: docker/build-push-action@v6
         with:
           context: .
