@@ -34,9 +34,9 @@ async function getCode(requestId='') {
   if (requesting) { emit('state',{phase:'error',message:'QQ 正在取码，稍后重试',reason:'busy',requestId}); return; }
   requesting=true; phase('requesting');
   try {
-    const {code}=await requestFarmCode(session,{appId:'1112386029',timeoutMs:20000});
+    const {code,expiresAt}=await requestFarmCode(session,{appId:'1112386029',timeoutMs:20000});
     if (shuttingDown || current==='offline') return;
-    emit('code',{code,...(requestId?{requestId}:{})});
+    emit('code',{code,...(expiresAt?{expiresAt}:{}),...(requestId?{requestId}:{})});
     requesting=false; phase('success');
   } catch(error) {
     requesting=false;
