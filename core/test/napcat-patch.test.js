@@ -46,7 +46,7 @@ test('NapCat 4.18.42 uses its exact renamed anchors', () => {
   const result = patchHost(v42);
   assert.match(result, /NAPCAT_TEST_QQ_DATA/);
   assert.match(result, /setLogin\(d\)/);
-  assert.match(result, /ready\(d, _\)/);
+  assert.match(result, /ready\(p, _\)/);
   assert.match(result, /loginFailed\(u, d\)/);
   assert.match(result, /WebUI disabled/);
   assert.doesNotMatch(result, /await n\.init\(/);
