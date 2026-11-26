@@ -9,6 +9,7 @@ services:
       PAD_TOKEN: "${PAD_TOKEN:?Set PAD_TOKEN}"
       PAD_SIGN_URL: "${PAD_SIGN_URL:-}"
       PAD_SIGN_STYLE: "${PAD_SIGN_STYLE:-}"
+      PAD_LOCAL_XWID_URL: "${PAD_LOCAL_XWID_URL:-}"
       PAD_SIGN_KEY: "${PAD_SIGN_KEY:-}"
       PAD_PT_VERSION: "${PAD_PT_VERSION:-}"
       PAD_QUA: "${PAD_QUA:-}"

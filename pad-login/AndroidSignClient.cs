@@ -10,7 +10,10 @@ public sealed class AndroidSignClient(string baseUrl) : AndroidBotSignProvider, 
 {
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromMinutes(5) };
     private readonly string _baseUrl = baseUrl.TrimEnd('/');
-    private readonly bool _ktorStyle = string.Equals(Environment.GetEnvironmentVariable("PAD_SIGN_STYLE"), "ktor", StringComparison.OrdinalIgnoreCase);
+    private readonly string? _localXwidUrl = Environment.GetEnvironmentVariable("PAD_LOCAL_XWID_URL")?.TrimEnd('/');
+    private readonly bool _remixStyle = string.Equals(Environment.GetEnvironmentVariable("PAD_SIGN_STYLE"), "remix", StringComparison.OrdinalIgnoreCase);
+    private readonly bool _ktorStyle = string.Equals(Environment.GetEnvironmentVariable("PAD_SIGN_STYLE"), "ktor", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(Environment.GetEnvironmentVariable("PAD_SIGN_STYLE"), "remix", StringComparison.OrdinalIgnoreCase);
     private readonly HashSet<long> _registered = new();
     private readonly SemaphoreSlim _registerLock = new(1, 1);
 
@@ -21,12 +24,14 @@ public sealed class AndroidSignClient(string baseUrl) : AndroidBotSignProvider, 
         JsonNode? data;
         if (_ktorStyle)
         {
-            var root = await GetKtor("/sign", new()
+            var query = new Dictionary<string, string>
             {
                 ["uin"] = uin.ToString(), ["cmd"] = cmd, ["seq"] = seq.ToString(),
                 ["buffer"] = Convert.ToHexString(body.Span), ["guid"] = Convert.ToHexString(Context.Keystore.Guid),
                 ["qua"] = Context.AppInfo.Qua,
-            });
+            };
+            if (_remixStyle) AddRemixFields(query);
+            var root = await GetKtor("/sign", query);
             data = root?["data"];
         }
         else
@@ -51,11 +56,16 @@ public sealed class AndroidSignClient(string baseUrl) : AndroidBotSignProvider, 
 
     public override Task<byte[]> GetEnergy(long uin, string data)
     {
-        if (_ktorStyle) return GetKtorBytes("/energy", new()
+        if (_ktorStyle)
         {
-            ["uin"] = uin.ToString(), ["data"] = data, ["guid"] = Convert.ToHexString(Context.Keystore.Guid),
-            ["ver"] = Context.AppInfo.SdkInfo.SdkVersion, ["version"] = Context.AppInfo.PtVersion, ["qua"] = Context.AppInfo.Qua,
-        });
+            var query = new Dictionary<string, string>
+            {
+                ["uin"] = uin.ToString(), ["data"] = data, ["guid"] = Convert.ToHexString(Context.Keystore.Guid),
+                ["ver"] = Context.AppInfo.SdkInfo.SdkVersion, ["version"] = Context.AppInfo.PtVersion, ["qua"] = Context.AppInfo.Qua,
+            };
+            if (_remixStyle) AddRemixFields(query);
+            return GetKtorBytes("/energy", query);
+        }
         return GetBytes("/energy", new JsonObject
         {
             ["uin"] = uin, ["data"] = data, ["guid"] = Convert.ToHexString(Context.Keystore.Guid),
@@ -65,6 +75,14 @@ public sealed class AndroidSignClient(string baseUrl) : AndroidBotSignProvider, 
 
     public override Task<byte[]> GetDebugXwid(long uin, string data)
     {
+        if (_remixStyle && !string.IsNullOrEmpty(_localXwidUrl))
+        {
+            return GetBytes("/get_tlv553", new JsonObject
+            {
+                ["uin"] = uin, ["data"] = data, ["guid"] = Convert.ToHexString(Context.Keystore.Guid),
+                ["version"] = Context.AppInfo.PtVersion, ["qua"] = Context.AppInfo.Qua,
+            }, _localXwidUrl);
+        }
         if (_ktorStyle)
         {
             var guid = Convert.ToHexString(Context.Keystore.Guid);
@@ -77,9 +95,9 @@ public sealed class AndroidSignClient(string baseUrl) : AndroidBotSignProvider, 
         });
     }
 
-    private async Task<byte[]> GetBytes(string path, JsonObject payload)
+    private async Task<byte[]> GetBytes(string path, JsonObject payload, string? baseUrl = null)
     {
-        var response = await Post(path, payload);
+        var response = await Post(path, payload, baseUrl);
         return Hex(response?["data"]?.GetValue<string>());
     }
 
@@ -91,7 +109,7 @@ public sealed class AndroidSignClient(string baseUrl) : AndroidBotSignProvider, 
 
     private async Task<JsonObject?> GetKtor(string path, Dictionary<string, string> query)
     {
-        if (_ktorStyle && path != "/register" && query.TryGetValue("uin", out var uin) && long.TryParse(uin, out var number)) await EnsureKtorSession(number);
+        if (_ktorStyle && !_remixStyle && path != "/register" && query.TryGetValue("uin", out var uin) && long.TryParse(uin, out var number)) await EnsureKtorSession(number);
         var url = _baseUrl + path + "?" + string.Join("&", query.Select(item => $"{Uri.EscapeDataString(item.Key)}={Uri.EscapeDataString(item.Value)}"));
         try
         {
@@ -101,6 +119,18 @@ public sealed class AndroidSignClient(string baseUrl) : AndroidBotSignProvider, 
             return root is null || root["code"]?.GetValue<int>() != 0 ? null : root;
         }
         catch (Exception error) when (error is HttpRequestException or TaskCanceledException or JsonException) { return null; }
+    }
+
+    private void AddRemixFields(Dictionary<string, string> query)
+    {
+        var guid = Convert.ToHexString(Context.Keystore.Guid);
+        var androidId = Context.Keystore.AndroidId;
+        if (string.IsNullOrWhiteSpace(androidId)) androidId = guid[..Math.Min(16, guid.Length)];
+        query["android_id"] = androidId;
+        query["guid"] = guid;
+        query["ver"] = Context.AppInfo.PtVersion;
+        query["version"] = Context.AppInfo.SdkInfo.SdkVersion;
+        query["qua"] = Context.AppInfo.Qua;
     }
 
     private async Task EnsureKtorSession(long uin)
@@ -123,12 +153,12 @@ public sealed class AndroidSignClient(string baseUrl) : AndroidBotSignProvider, 
         finally { _registerLock.Release(); }
     }
 
-    private async Task<JsonObject?> Post(string path, JsonObject payload)
+    private async Task<JsonObject?> Post(string path, JsonObject payload, string? baseUrl = null)
     {
         using var content = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json");
         try
         {
-            using var response = await _http.PostAsync(_baseUrl + path, content);
+            using var response = await _http.PostAsync((baseUrl ?? _baseUrl) + path, content);
             if (!response.IsSuccessStatusCode) return null;
             var root = JsonNode.Parse(await response.Content.ReadAsStringAsync())?.AsObject();
             if (root is null || root["code"]?.GetValue<int>() != 0) return null;

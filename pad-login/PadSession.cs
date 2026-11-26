@@ -44,6 +44,7 @@ public sealed class PadSession : IDisposable
                 phase = _phase,
                 detail = _detail,
                 signConfigured = SignConfigured,
+                signMode = Environment.GetEnvironmentVariable("PAD_SIGN_STYLE") ?? "json",
                 hasQr = _qrImage is not null,
                 verifyUrl = _verifyUrl,
                 hasSavedSession = HasSavedSession(),
