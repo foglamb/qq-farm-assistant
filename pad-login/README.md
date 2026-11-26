@@ -5,12 +5,12 @@
 ## 已验证
 
 - `Lagrange.Core 2.1.3` / .NET 8 编译通过。
-- AndroidPad 9.2.20 / `11650` 登录配置通过。
-- 本地签名服务 `/sign`、`/energy`、`/get_tlv553` 在服务器上均实测 `code=0`，构建和证据见 `../qsign-service/`。
+- AndroidPad 9.3.65 真实账号登录、短信验证和 keystore 重启免密恢复通过，Windows QQ 可共存。
+- 公共 sign/energy（用户明确选择）和本地 TLV553 路由可用。
 - QQ TEA 通过 Lagrange 内置实现的 Span 委托调用，启动自检通过。
 - HTTP 鉴权、健康检查、Pad 到签名服务的容器网络连接通过。
-- `FARM_AUTH_ROUNDTRIP=PASS`：真实 `FarmAuthService.Build/Parse` 已完成 A2 前缀、TEA、Proto 请求字段及响应 Code 的离线回环测试（`PAD_SELF_TEST=1`）。
-- 当前状态为 `needs_password`：等待真实账号首登，尚未声称腾讯在线登录或农场 Code 已成功。
+- `FARM_AUTH_ROUNDTRIP=PASS`：MiniApp GetCode 与旧 auth/auth_emp 诊断服务均通过离线回环测试（`PAD_SELF_TEST=1`）。
+- `LightAppSvc.mini_program_auth.GetCode` 真实账号连续两次返回 `ret=0` 和非空 32 位 Code。
 
 ## AndroidPad 首登
 
@@ -20,14 +20,16 @@
 
 ## 农场 Code 自定义服务
 
-`FarmAuthService.cs` 注册 `QQConnectLogin.auth_emp`：
+默认 `FarmCodeService.cs` 注册 `LightAppSvc.mini_program_auth.GetCode`：
 
-- `RequestType.D2Auth + EncryptType.NoEncrypt`，避免被二次使用 D2Key 加密。
-- 请求体为 `BE32(A2.Length) || A2 || QQ_TEA_Encrypt(auth.AuthRequest, A2Key)`。
-- 默认 `appid=1112386029`、`pf=openmobile_android`、`sdkp=android`、`sdkv=1.5.9`。
-- 解析 `auth.AuthResponse` 的字段 1 `ret`、字段 2 `msg`、字段 4 `code`。
-- 可用 `FARM_PACKAGE_NAME`、`FARM_CERT_MD5`、`FARM_OPENAPI`、`FARM_APPID` 调整应用签名和权限列表。
-- 未登录时 `/api/farm-code` 会拒绝请求；真实 `ret/msg/code` 以腾讯响应为准，不预置假 Code。
+- `RequestType.Simple + EncryptType.EncryptD2Key`。
+- 外层 `StQWebReq`：字段 1 `Seq`、字段 2 `qua`、字段 3 `deviceInfo`、字段 4 `busiBuff`、字段 5 `traceid`。
+- `busiBuff` 内是 `StGetCodeReq`，字段 1 为农场 AppID `1112386029`。
+- 解析 `StQWebRsp` 的字段 2 `retCode`、字段 3 `errMsg`、字段 4 `busiBuff`，再从内层 `StGetCodeRsp` 字段 2 取 Code。
+- `FARM_AUTH_MODE=miniapp` 为默认；`emp` 和 `plain` 仅保留为历史诊断路径。
+- 未登录时 `/api/farm-code` 会拒绝请求；真实 `ret/message/code` 以腾讯响应为准，不预置假 Code。
+
+`QQConnectLogin.auth_emp` 实测为空应用包，`QQConnectLogin.auth` 实测 `110401 请求的应用不存在`，二者均不是农场取码默认路径。
 
 ## 官方小程序旧接口状态（已停用）
 
@@ -37,8 +39,9 @@
 
 ```bash
 export PAD_TOKEN='replace-with-random-token'
-export PAD_SIGN_URL='http://172.17.0.1:8081'
-export PAD_SIGN_STYLE=''
+export PAD_SIGN_URL='https://sign.qsign.icu'  # 需用户明确选择公共签名
+export PAD_SIGN_STYLE='remix'
+export PAD_LOCAL_XWID_URL='http://172.17.0.1:8082'
 docker compose up -d --build
 ```
 
@@ -52,6 +55,6 @@ docker compose up -d --build
 
 - `GET /api/status`：Pad 状态，不返回密码或签名地址；`errors` 仅保留最近 20 条 Warning/Error/Critical 日志，用于定位腾讯登录失败。
 - `POST /api/login`：`{uin,password}` 启动 Pad 登录。
-- `POST /api/farm-code`：调用 `QQConnectLogin.auth_emp`，返回真实 `ret/message/code`。
+- `POST /api/farm-code`：默认调用 `LightAppSvc.mini_program_auth.GetCode`，返回真实 `ret/message/code`。
 - `GET /qr.png`：兼容 QR 流程二维码（如产生）。
 - `POST /captcha`、`POST /sms`：登录验证。

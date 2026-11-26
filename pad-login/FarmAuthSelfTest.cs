@@ -14,10 +14,11 @@ internal static class FarmAuthSelfTest
     {
         var service = new FarmAuthService();
         var plainService = new FarmPlainService();
+        var codeService = new FarmCodeService();
         using var context = BotFactory.Create(new BotConfig
         {
             Protocol = Protocols.AndroidPad,
-            CustomServices = [service, plainService],
+            CustomServices = [service, plainService, codeService],
         });
         context.Keystore.WLoginSigs.A2 = Encoding.ASCII.GetBytes("synthetic-a2");
         context.Keystore.WLoginSigs.A2Key = Convert.FromHexString("00112233445566778899AABBCCDDEEFF");
@@ -44,5 +45,18 @@ internal static class FarmAuthSelfTest
         if (ProtoSerializer.Deserialize<FarmAuthPayloadRequest>(plainBody.Span).AppId != 1112386029) throw new InvalidDataException("auth plain request mismatch");
         var plainParsed = (FarmAuthResponse)await ((IService)plainService).Parse(ProtoSerializer.Serialize(responsePayload), context);
         if (plainParsed.Ret != 0 || plainParsed.Code != "synthetic-code") throw new InvalidDataException("auth plain response mismatch");
+
+        var codeBody = await ((IService)codeService).Build(new FarmCodeRequest(), context);
+        var qweb = ProtoSerializer.Deserialize<MiniQWebRequest>(codeBody.Span);
+        if (qweb.Seq != 3 || qweb.Qua != context.AppInfo.Qua || qweb.TraceId != "0") throw new InvalidDataException("GetCode outer fields mismatch");
+        if (ProtoSerializer.Deserialize<MiniGetCodeRequest>(qweb.BusiBuff).AppId != "1112386029") throw new InvalidDataException("GetCode appid mismatch");
+        var codeResponse = ProtoSerializer.Serialize(new MiniQWebResponse
+        {
+            Seq = 3,
+            RetCode = 0,
+            BusiBuff = ProtoSerializer.Serialize(new MiniGetCodeResponse { Code = "synthetic-code" }),
+        });
+        var codeParsed = (FarmAuthResponse)await ((IService)codeService).Parse(codeResponse, context);
+        if (codeParsed.Ret != 0 || codeParsed.Code != "synthetic-code") throw new InvalidDataException("GetCode response mismatch");
     }
 }

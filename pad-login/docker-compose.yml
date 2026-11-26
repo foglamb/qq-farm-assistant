@@ -22,7 +22,7 @@ services:
       PAD_SUB_SIG_MAP: "${PAD_SUB_SIG_MAP:-}"
       PAD_MAIN_SIG_MAP: "${PAD_MAIN_SIG_MAP:-}"
       FARM_APPID: "${FARM_APPID:-1112386029}"
-      FARM_AUTH_MODE: "${FARM_AUTH_MODE:-emp}"
+      FARM_AUTH_MODE: "${FARM_AUTH_MODE:-miniapp}"
       PAD_DATA_DIR: /data
     volumes:
       - pad-login-data:/data

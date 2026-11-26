@@ -92,7 +92,7 @@ public sealed class PadSession : IDisposable
                 SignProvider = sign,
                 AutoReconnect = true,
                 AutoReLogin = true,
-                CustomServices = [new FarmAuthService(), new FarmPlainService()],
+                CustomServices = [new FarmCodeService(), new FarmAuthService(), new FarmPlainService()],
             };
             _context?.Dispose();
             BotKeystore? saved = null;
@@ -282,11 +282,16 @@ public sealed class PadSession : IDisposable
     {
         var context = _context ?? throw new InvalidOperationException("请先完成 AndroidPad 登录");
         if (!context.IsOnline) throw new InvalidOperationException("AndroidPad 当前不在线");
-        if (string.Equals(Environment.GetEnvironmentVariable("FARM_AUTH_MODE"), "plain", StringComparison.OrdinalIgnoreCase))
+        var mode = Environment.GetEnvironmentVariable("FARM_AUTH_MODE") ?? "miniapp";
+        if (string.Equals(mode, "plain", StringComparison.OrdinalIgnoreCase))
         {
             return await context.SendEvent<FarmAuthResponse>(new FarmPlainRequest(FarmAuthPayloadRequest.Create(context)));
         }
-        return await context.SendEvent<FarmAuthResponse>(new FarmAuthRequest(FarmAuthPayloadRequest.Create(context)));
+        if (string.Equals(mode, "emp", StringComparison.OrdinalIgnoreCase))
+        {
+            return await context.SendEvent<FarmAuthResponse>(new FarmAuthRequest(FarmAuthPayloadRequest.Create(context)));
+        }
+        return await context.SendEvent<FarmAuthResponse>(new FarmCodeRequest());
     }
 
     public void Dispose()
