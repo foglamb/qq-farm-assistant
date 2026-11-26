@@ -14,6 +14,7 @@ public sealed class PadSession : IDisposable
     private readonly SemaphoreSlim _loginLock = new(1, 1);
     private readonly CancellationTokenSource _closing = new();
     private readonly object _sync = new();
+    private readonly BotAppInfo _appInfo;
     private BotContext? _context;
     private byte[]? _qrImage;
     private string _phase = "idle";
@@ -27,6 +28,7 @@ public sealed class PadSession : IDisposable
         _dataDir = Environment.GetEnvironmentVariable("PAD_DATA_DIR") ?? Path.Combine(Directory.GetCurrentDirectory(), "data");
         Directory.CreateDirectory(_dataDir);
         _keystorePath = Path.Combine(_dataDir, "keystore.json");
+        _appInfo = CreateAppInfo();
     }
 
     public bool SignConfigured => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("PAD_SIGN_URL"));
@@ -38,7 +40,7 @@ public sealed class PadSession : IDisposable
             return new
             {
                 protocol = "AndroidPad",
-                protocolVersion = "9.2.20",
+                protocolVersion = _appInfo.PtVersion,
                 phase = _phase,
                 detail = _detail,
                 signConfigured = SignConfigured,
@@ -95,9 +97,9 @@ public sealed class PadSession : IDisposable
             {
                 var saved = JsonSerializer.Deserialize<BotKeystore>(await File.ReadAllTextAsync(_keystorePath, _closing.Token))
                     ?? throw new InvalidOperationException("保存的 Pad 登录态无法读取，请删除隔离数据后重试");
-                _context = BotFactory.Create(config, saved);
+                _context = BotFactory.Create(config, saved, _appInfo);
             }
-            else _context = BotFactory.Create(config);
+            else _context = BotFactory.Create(config, appInfo: _appInfo);
             RegisterEvents(_context);
             var success = uin > 0 && !string.IsNullOrEmpty(password)
                 ? await _context.Login(uin, password, _closing.Token)
@@ -113,6 +115,30 @@ public sealed class PadSession : IDisposable
             lock (_sync) { _phase = "error"; _detail = error.Message; }
         }
         finally { _loginLock.Release(); }
+    }
+
+    private static string? OptionalEnv(string name) => Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value : null;
+
+    private static BotAppInfo CreateAppInfo()
+    {
+        using var defaultContext = BotFactory.Create(new BotConfig { Protocol = Protocols.AndroidPad });
+        var source = defaultContext.AppInfo;
+        return new BotAppInfo
+        {
+            Os = source.Os,
+            VendorOs = source.VendorOs,
+            Kernel = source.Kernel,
+            Qua = OptionalEnv("PAD_QUA") ?? source.Qua,
+            CurrentVersion = OptionalEnv("PAD_CURRENT_VERSION") ?? source.CurrentVersion,
+            PtVersion = OptionalEnv("PAD_PT_VERSION") ?? source.PtVersion,
+            SsoVersion = source.SsoVersion,
+            PackageName = source.PackageName,
+            ApkSignatureMd5 = source.ApkSignatureMd5,
+            SdkInfo = source.SdkInfo,
+            AppId = source.AppId,
+            SubAppId = int.TryParse(Environment.GetEnvironmentVariable("PAD_SUB_APP_ID"), out var subAppId) ? subAppId : source.SubAppId,
+            AppClientVersion = ushort.TryParse(Environment.GetEnvironmentVariable("PAD_APP_CLIENT_VERSION"), out var clientVersion) ? clientVersion : source.AppClientVersion,
+        };
     }
 
     private bool HasSavedSession()

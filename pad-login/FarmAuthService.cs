@@ -84,6 +84,7 @@ public sealed class FarmAuthPayloadRequest
         {
             AppId = ulong.Parse(Environment.GetEnvironmentVariable("FARM_APPID") ?? "1112386029"),
             OpenApi = openApi,
+            QqV = context.AppInfo.PtVersion,
             SKey = Encoding.UTF8.GetString(context.Keystore.WLoginSigs.SKey),
             Md5Time = string.IsNullOrEmpty(sign) ? 0 : time,
             Sign = sign,
