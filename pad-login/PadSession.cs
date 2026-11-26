@@ -157,18 +157,29 @@ public sealed class PadSession : IDisposable
         });
         context.EventInvoker.RegisterEvent<BotNewDeviceVerifyEvent>((_, args) =>
         {
-            lock (_sync) { _verifyUrl = args.Url; _detail = "需要新设备验证"; }
+            lock (_sync) { _verifyUrl = args.Url; _phase = "needs_device_verify"; _detail = "需要新设备验证，请打开下方验证链接"; }
             return Task.CompletedTask;
         });
         context.EventInvoker.RegisterEvent<BotCaptchaEvent>((_, args) =>
         {
-            lock (_sync) { _verifyUrl = args.CaptchaUrl; _detail = "需要验证码后调用 /captcha"; }
+            lock (_sync) { _verifyUrl = args.CaptchaUrl; _phase = "needs_captcha"; _detail = "需要腾讯验证码/短信验证，请打开下方链接并提交结果"; }
             return Task.CompletedTask;
         });
     }
 
-    public void SubmitCaptcha(string ticket, string randstr) => _context?.SubmitCaptcha(ticket, randstr);
-    public void SubmitSms(string code) => _context?.SubmitSMSCode(code);
+    public void SubmitCaptcha(string ticket, string randstr)
+    {
+        var context = _context ?? throw new InvalidOperationException("登录会话不存在，请重新登录");
+        lock (_sync) { _phase = "verifying"; _detail = "验证码已提交，正在等待腾讯登录结果"; _verifyUrl = null; }
+        context.SubmitCaptcha(ticket, randstr);
+    }
+
+    public void SubmitSms(string code)
+    {
+        var context = _context ?? throw new InvalidOperationException("登录会话不存在，请重新登录");
+        lock (_sync) { _phase = "verifying"; _detail = "短信码已提交，正在等待腾讯登录结果"; _verifyUrl = null; }
+        context.SubmitSMSCode(code);
+    }
 
     public async Task<FarmAuthResponse> GetFarmCodeAsync()
     {
