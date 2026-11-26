@@ -22,3 +22,11 @@ test('Pad and NapCat keep their real login modes and YYB keeps its real API chai
   assert(qq.includes("stage !== 'success' && protocol === 'napcat'"))
   for (const endpoint of ['/api/yyb/qr/create', '/api/yyb/qr/poll', '/api/yyb/qr/confirm', '/api/yyb/getcode']) assert(modal.includes(endpoint), endpoint)
 })
+
+test('Pad keeps the SMS input visible after captcha submission', () => {
+  assert(qq.includes("stage.value = 'needs_sms'"))
+  assert(qq.includes("'needs_device_verify', 'needs_sms'"))
+  assert(qq.includes('aria-label="手机短信验证码"'))
+  assert(qq.includes('autocomplete="one-time-code"'))
+  assert(qq.includes('提交手机验证码'))
+})

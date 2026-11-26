@@ -8,7 +8,7 @@ const { padLaunch } = require('./pad-login-launch');
 
 const PREFIX = Buffer.from('QQFARM_LOGIN:');
 const MAX_LINE = 3 * 1024 * 1024;
-const PHASES = new Set(['starting', 'waiting_scan', 'scanned', 'initializing', 'requesting', 'success', 'login_failed', 'expired', 'offline', 'error', 'needs_captcha', 'needs_device_verify', 'verifying', 'online', 'needs_password']);
+const PHASES = new Set(['starting', 'waiting_scan', 'scanned', 'initializing', 'requesting', 'success', 'login_failed', 'expired', 'offline', 'error', 'needs_captcha', 'needs_device_verify', 'needs_sms', 'verifying', 'online', 'needs_password']);
 const validCode = value => typeof value === 'string' && /^[\w.~+/=%-]{8,2048}$/.test(value) && !/^[-+]?\d+$/.test(value);
 
 class QqScanError extends Error {
@@ -212,7 +212,7 @@ class QqLoginService {
         item.phone = typeof value.phone === 'string' ? value.phone.slice(0, 64) : '';
         if (['offline', 'waiting_scan', 'expired', 'login_failed'].includes(value.phase)) item.nativeOnline = false;
         if (value.phase === 'success' || value.phase === 'online') item.nativeOnline = true;
-        if (['needs_captcha', 'needs_device_verify', 'verifying'].includes(value.phase)) clearTimeout(item.startTimer);
+        if (['needs_captcha', 'needs_device_verify', 'needs_sms', 'verifying'].includes(value.phase)) clearTimeout(item.startTimer);
         if (['error', 'offline', 'expired', 'login_failed'].includes(value.phase)) {
           clearTimeout(item.startTimer);
           item.image = '';

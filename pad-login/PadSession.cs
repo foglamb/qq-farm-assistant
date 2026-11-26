@@ -280,8 +280,8 @@ public sealed partial class PadSession : IDisposable
         var accepted = context.SubmitCaptcha(ticket, randstr);
         lock (_sync)
         {
-            _phase = accepted ? "verifying" : "error";
-            _detail = accepted ? "验证码已提交，正在等待腾讯登录结果" : "验证码会话已结束，请重新输入密码登录";
+            _phase = accepted ? "needs_sms" : "error";
+            _detail = accepted ? "滑块已提交；如腾讯已发送短信，请输入手机短信验证码完成登录" : "验证码会话已结束，请重新输入密码登录";
             if (accepted) _verifyUrl = null;
         }
         await Task.CompletedTask;

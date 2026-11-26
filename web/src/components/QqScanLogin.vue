@@ -262,8 +262,8 @@ async function showCaptcha() {
         await api.post(`/api/qq-login/sessions/${encodeURIComponent(sessionId.value)}/captcha`, {
           ticket: result.ticket, randstr: result.randstr,
         }, requestOptions)
-        stage.value = 'verifying'
-        message.value = '腾讯验证已提交，正在等待登录结果…'
+        stage.value = 'needs_sms'
+        message.value = '滑块已提交；如腾讯已发送短信，请输入手机短信验证码完成登录'
       }
       catch (value: any) {
         error.value = requestError(value, '验证票据提交失败')
@@ -403,15 +403,19 @@ onBeforeUnmount(() => {
     <div role="status" class="rounded-lg px-3 py-3 text-center text-sm leading-6" :style="{ color: 'var(--theme-text)', background: 'color-mix(in srgb, var(--theme-primary) 10%, transparent)' }">
       {{ message }}
     </div>
-    <div v-if="!saved && (verifyUrl || ['needs_captcha', 'needs_device_verify'].includes(stage))" class="space-y-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-      <div class="text-sm font-medium" :style="{ color: 'var(--theme-text)' }">腾讯安全验证</div>
+    <div v-if="!saved && (verifyUrl || ['needs_captcha', 'needs_device_verify', 'needs_sms'].includes(stage) || (protocol === 'pad' && stage === 'verifying'))" class="space-y-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+      <div class="text-sm font-medium" :style="{ color: 'var(--theme-text)' }">{{ stage === 'needs_sms' ? '手机短信验证码' : '腾讯安全验证' }}</div>
       <p v-if="verifyPhone" class="text-xs opacity-70" :style="{ color: 'var(--theme-text)' }">验证手机：{{ verifyPhone }}</p>
+      <p v-if="stage === 'needs_sms'" class="text-xs opacity-70" :style="{ color: 'var(--theme-text)' }">滑块已提交。腾讯发送短信后，将收到的验证码填入下方并完成登录。</p>
       <a v-if="verifyUrl" :href="verifyUrl" target="_blank" rel="noopener" class="block break-all text-xs text-blue-500">{{ verifyUrl }}</a>
       <BaseButton v-if="verifyUrl" variant="primary" :loading="verificationBusy" @click="showCaptcha">开始腾讯滑块验证</BaseButton>
-      <div class="flex flex-wrap gap-2">
-        <input v-model="smsCode" inputmode="numeric" class="min-w-0 flex-1 border border-gray-300 rounded-lg p-2 dark:border-gray-600" :style="{ background: 'var(--theme-bg)', color: 'var(--theme-text)' }" placeholder="收到短信码时输入">
-        <BaseButton variant="outline" :disabled="!smsCode.trim() || verificationBusy" @click="submitSms">提交短信码</BaseButton>
-      </div>
+      <label class="block text-sm" :style="{ color: 'var(--theme-text)' }">
+        手机验证码
+        <div class="mt-1 flex flex-wrap gap-2">
+          <input v-model="smsCode" aria-label="手机短信验证码" inputmode="numeric" autocomplete="one-time-code" maxlength="8" class="min-w-0 flex-1 border border-gray-300 rounded-lg p-2 dark:border-gray-600" :style="{ background: 'var(--theme-bg)', color: 'var(--theme-text)' }" placeholder="输入收到的短信验证码">
+          <BaseButton variant="outline" :disabled="!smsCode.trim() || verificationBusy" @click="submitSms">提交手机验证码</BaseButton>
+        </div>
+      </label>
     </div>
     <p v-if="error" role="alert" class="break-words text-sm text-red-600 dark:text-red-400">
       {{ error }}

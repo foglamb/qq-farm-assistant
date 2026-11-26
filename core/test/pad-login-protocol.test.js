@@ -52,6 +52,11 @@ test('Pad password is pipe-only and real captcha/SMS commands stay in their owni
   assert.equal(pending.phone, '86-138****0000');
   assert.equal(item.startTimer._destroyed, true, 'captcha/SMS wait must not hit the initial 45s timeout');
   service.submitCaptcha('1001:token-a', state.sessionId, 'ticket-fixture', 'randstr-fixture');
+  children[0].event('state', { phase: 'needs_sms', message: '滑块已提交；请输入手机短信验证码', phone: '86-138****0000' });
+  const smsPending = service.get('1001:token-a', state.sessionId);
+  assert.equal(smsPending.status, 'needs_sms');
+  assert.equal(smsPending.phone, '86-138****0000');
+  assert.equal(item.startTimer._destroyed, true, 'SMS entry must remain alive after captcha submission');
   service.submitSms('1001:token-a', state.sessionId, '123456');
   assert.deepEqual(children[0].commands.at(-2), { command: 'submit_captcha', ticket: 'ticket-fixture', randstr: 'randstr-fixture' });
   assert.deepEqual(children[0].commands.at(-1), { command: 'submit_sms', code: '123456' });

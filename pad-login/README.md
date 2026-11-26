@@ -34,7 +34,7 @@ stdin 每行一个 JSON 命令：
 - `{"command":"submit_sms","code":"CODE"}`。
 - `{"command":"shutdown"}`。
 
-stdout 只写 `QQFARM_LOGIN:{...}` 帧，事件为 `session/state/code`。真实 Code 仅出现在 `kind:"code"` 的 `value.code`，不额外打印；第三方 stdout 会转到 stderr。state 使用 Node 已有 PHASES，并在验证场景使用 `needs_captcha/needs_device_verify/verifying/online`。
+stdout 只写 `QQFARM_LOGIN:{...}` 帧，事件为 `session/state/code`。真实 Code 仅出现在 `kind:"code"` 的 `value.code`，不额外打印；第三方 stdout 会转到 stderr。state 使用 Node 已有 PHASES，并在验证场景使用 `needs_captcha/needs_device_verify/needs_sms/verifying/online`。滑块提交后进入 `needs_sms`，面板持续显示手机短信验证码输入框，直到登录成功或需要新的滑块。
 
 keystore 固定保存到 `SESSION_DIR/qq-data/keystore.json`，构造会话时即创建 `qq-data`；密码不落盘。
 
