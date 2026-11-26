@@ -111,9 +111,12 @@ function filterYybAccountsForUser(data, req, getAccountsForUser) {
   return accounts.filter(account => owned.has(String(account.openid || account.open_id || '').trim()));
 }
 
-function registerAdminYybRoutes({ app, requireAdminToken, getAccountsForUser, canAccessAccount, onProxyProfileChanged }) {
+function registerAdminYybRoutes({ app, requireAdminToken, getAccountsForUser, canAccessAccount, onProxyProfileChanged, yybRuntime = null }) {
   if (typeof getAccountsForUser !== 'function' || typeof canAccessAccount !== 'function') throw new Error('YYB routes require account access controls');
   const run = handler => async (req, res) => {
+    if (yybRuntime && !req.path.endsWith('/runtime') && !yybRuntime.getStatus().enabled) {
+      return res.status(503).json({ ok: false, error: '应用宝协议默认关闭，请先在设置中开启' });
+    }
     try { await handler(req, res); }
     catch (error) {
       if (!res.headersSent) res.status(error.status || 500).json({ ok: false, error: error.message });
@@ -161,6 +164,20 @@ function registerAdminYybRoutes({ app, requireAdminToken, getAccountsForUser, ca
       return res.status(result.retryable ? 502 : result.needsRescan ? 409 : 400).json({ ok: false, error: result.error, yybCode: result.yybCode, retryable: !!result.retryable, needsRescan: !!result.needsRescan });
     }
     return res.status(successStatus).json({ ok: true, data: result.data });
+  }
+
+  if (yybRuntime) {
+    const adminOnly = handler => async (req, res) => {
+      if (req.currentUser?.role !== 'admin') return res.status(403).json({ ok: false, error: '仅管理员可管理应用宝协议' });
+      await handler(req, res);
+    };
+    app.get('/api/yyb/runtime', requireAdminToken, run(adminOnly(async (_req, res) => {
+      res.json({ ok: true, data: yybRuntime.getStatus() });
+    })));
+    app.post('/api/yyb/runtime', requireAdminToken, run(adminOnly(async (req, res) => {
+      const data = await yybRuntime.setEnabled(req.body?.enabled);
+      res.json({ ok: true, data });
+    })));
   }
 
   // 静态代理配置库（密码仅保存在 YYB 本机 SQLite，列表接口只返回是否已配置）
