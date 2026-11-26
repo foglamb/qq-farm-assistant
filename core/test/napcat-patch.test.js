@@ -29,6 +29,7 @@ const v42 = [
   'c.onQRCodeGetPicture = ({ pngBase64QrcodeData: u, qrcodeUrl: d }) => {',
   'c.onQRCodeSessionFailed = (u, d) => {',
   'await Cke(p, U, f);',
+  'const _ = await Ake(d, e, t, x, g);',
   ...common,
 ].join('\n');
 
@@ -45,7 +46,7 @@ test('NapCat 4.18.42 uses its exact renamed anchors', () => {
   const result = patchHost(v42);
   assert.match(result, /NAPCAT_TEST_QQ_DATA/);
   assert.match(result, /setLogin\(d\)/);
-  assert.match(result, /ready\(d, p\)/);
+  assert.match(result, /ready\(d, _\)/);
   assert.match(result, /loginFailed\(u, d\)/);
   assert.match(result, /WebUI disabled/);
   assert.doesNotMatch(result, /await n\.init\(/);
@@ -54,4 +55,5 @@ test('NapCat 4.18.42 uses its exact renamed anchors', () => {
 test('unknown or incomplete bundles fail closed instead of producing a partial patch', () => {
   assert.throws(() => patchHost(''), /Unrecognized NapCat build/);
   assert.throws(() => patchHost(v42.replace('await Cke(p, U, f);', '')), /Unrecognized NapCat build/);
+  assert.throws(() => patchHost(v42.replace('const _ = await Ake(d, e, t, x, g);', '')), /Unrecognized NapCat build/);
 });
