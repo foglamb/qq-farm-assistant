@@ -52,6 +52,16 @@ test('NapCat 4.18.42 uses its exact renamed anchors', () => {
   assert.doesNotMatch(result, /await n\.init\(/);
 });
 
+test('patched runtimes are idempotent and migrate the swapped ready arguments', () => {
+  const patched = patchHost(v42);
+  assert.equal(patchHost(patched), patched);
+  const stale = patched.replace('ready(p, _)', 'ready(d, p)');
+  const migrated = patchHost(stale);
+  assert.equal(migrated, patched);
+  assert.match(migrated, /ready\(p, _\)/);
+  assert.doesNotMatch(migrated, /ready\(d, p\)/);
+});
+
 test('unknown or incomplete bundles fail closed instead of producing a partial patch', () => {
   assert.throws(() => patchHost(''), /Unrecognized NapCat build/);
   assert.throws(() => patchHost(v42.replace('await Cke(p, U, f);', '')), /Unrecognized NapCat build/);

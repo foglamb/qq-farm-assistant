@@ -1,5 +1,17 @@
 // Apply only to a pinned program copy, never to a user's QQ profile.
 function patchHost(text) {
+  const readyV42 = 'await globalThis.__qqFarmLogin.ready(p, _); return;';
+  const staleReadyV42 = 'await globalThis.__qqFarmLogin.ready(d, p); return;';
+  // Runtime-only rebuilds may start from an already patched base image. Migrate
+  // the historical swapped session/identity arguments, otherwise leave a fully
+  // patched bundle unchanged instead of applying every anchor twice.
+  if (text.includes('globalThis.__qqFarmLogin.qr(event);')) {
+    if (text.includes(staleReadyV42)) {
+      if (text.split(staleReadyV42).length !== 2) throw new Error('Unrecognized NapCat ready hook count');
+      return text.replace(staleReadyV42, readyV42);
+    }
+    return text;
+  }
   function replace(old, value) {
     if (text.split(old).length !== 2) throw new Error(`Unrecognized NapCat build at: ${old.slice(0, 70)}`);
     text = text.replace(old, value);

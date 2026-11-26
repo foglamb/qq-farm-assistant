@@ -10,4 +10,7 @@ COPY core /app/core
 COPY web/dist /app/web/dist
 COPY scripts /app/scripts
 COPY pad-login/PadLogin /app/pad-login/PadLogin
-RUN chmod 755 /app/pad-login/PadLogin
+RUN node /app/core/qq-login/patch-napcat.cjs /opt/qq-login/napcat/napcat.mjs /opt/qq-login/napcat/napcat.mjs.next \
+    && mv /opt/qq-login/napcat/napcat.mjs.next /opt/qq-login/napcat/napcat.mjs \
+    && node --check /opt/qq-login/napcat/napcat.mjs \
+    && chmod 755 /app/pad-login/PadLogin
