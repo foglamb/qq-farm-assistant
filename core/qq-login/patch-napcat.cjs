@@ -65,10 +65,9 @@ function patchHost(text) {
   if (text.includes('await n2e(d, U, f);')) {
     replace('await n2e(d, U, f);', 'await n2e(d, U, f);\n await globalThis.__qqFarmLogin.ready(d, S); return;');
   } else {
-    // Ake resolves the actual QR/quick-login identity ({ uin, uid, ... }).
-    // The wrapper session p is a different object and never proves identity.
+    // Ake supplies identity; the wrapper session p supplies getNodeMiscService().
     replace('const _ = await Ake(d, e, t, x, g);', 'const _ = await Ake(d, e, t, x, g);');
-    replace('await Cke(p, U, f);', 'await Cke(p, U, f);\n await globalThis.__qqFarmLogin.ready(d, _); return;');
+    replace('await Cke(p, U, f);', 'await Cke(p, U, f);\n await globalThis.__qqFarmLogin.ready(p, _); return;');
   }
   replace('setFileLogEnabled(e) {', 'setFileLogEnabled(e) { e = false;');
   replace('setConsoleLogEnabled(e) {', 'setConsoleLogEnabled(e) { e = false;');
