@@ -43,7 +43,7 @@ def page(status):
 function render(x){document.querySelector('#result').textContent=JSON.stringify(x,null,2)}
 async function refresh(){const r=await fetch('/api/status?token='+encodeURIComponent(cfg.token));render(await r.json())}
 function showCaptcha(){if(!window.TencentCaptcha){alert('腾讯验证码脚本尚未加载，请检查网络后刷新');return}const captcha=new TencentCaptcha(cfg.appid,async res=>{if(res.ret!==0){render(res);return}document.querySelector('#result').textContent='验证成功，正在提交登录票据…';const r=await fetch('/captcha?token='+encodeURIComponent(cfg.token),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket:res.ticket,randstr:res.randstr})});render(await r.json());setTimeout(refresh,1500)},cfg.options);captcha.show()}
-render(cfg.status);refresh();setInterval(refresh,3000)
+render(cfg.status);refresh();setInterval(refresh,3000);showCaptcha()
 </script></body></html>""".replace("__CONFIG__", config)
 
 
