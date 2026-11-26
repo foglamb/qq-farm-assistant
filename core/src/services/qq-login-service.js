@@ -225,6 +225,14 @@ class QqLoginService {
           }
           if (!value.requestId || value.requestId === item.codeRequestId) item.codeReject?.(new QqScanError(item.message, 503, value.reason === 'busy' ? 'busy' : 'temporary'));
         }
+      } else if (kind === 'diagnostic' && value.event === 'napcat_recovery') {
+        const count = input => Number.isSafeInteger(input) && input >= 0 && input <= 10000 ? input : 0;
+        item.quickLogin = { requested: value.requested === true, historyCount: count(value.historyCount), matchedHistory: count(value.matchedHistory),
+          historyUinTypes: Array.isArray(value.historyUinTypes) ? value.historyUinTypes.filter(type => ['string', 'number', 'bigint', 'undefined'].includes(type)).slice(0, 4) : [] };
+      } else if (kind === 'diagnostic' && value.event === 'napcat_quick_result') {
+        const count = input => Number.isSafeInteger(input) && input >= 0 && input <= 10000 ? input : 0;
+        item.quickLogin = { ...(item.quickLogin || {}), result: typeof value.result === 'string' && /^\d{1,20}$/.test(value.result) ? value.result : '',
+          hasError: value.hasError === true, quickEnabled: count(value.quickEnabled) };
       } else if (kind === 'diagnostic' && ['identity_ready', 'identity_pending'].includes(value.event)) {
         if (['undefined', 'string', 'number', 'bigint', 'object', 'null', 'boolean'].includes(value.type)) {
           item.identityShape = { type: value.type, length: Number.isInteger(value.length) ? Math.max(0, Math.min(value.length, 100)) : 0 };
@@ -619,7 +627,7 @@ class QqLoginService {
     const diagnostic = outcome => {
       this.lastRecovery = { outcome, source, nativePhase: item?.nativePhase || item?.phase || '', durationMs: Date.now() - startedAt, hasCode: !!item?.code,
         hasIdentity: !!item?.uin, identityType: item?.identityShape?.type || 'undefined',
-        identityLength: item?.identityShape?.length || 0,
+        identityLength: item?.identityShape?.length || 0, quickLogin: item?.quickLogin || null,
         matchesSaved: item?.uin ? item.uin === identity.uin && !item.identityChanged : null };
     };
     try {

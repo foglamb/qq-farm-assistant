@@ -46,6 +46,8 @@ async function getCode(requestId='') {
 }
 globalThis.__qqFarmLogin = {
   setLogin(value){login=value;},
+  recovery(value){emit('diagnostic',{event:'napcat_recovery',...value});},
+  recoveryResult(value){emit('diagnostic',{event:'napcat_quick_result',...value});},
   phase,
   loginFailed(type,code){phase(type===1&&code===3?'expired':'login_failed');},
   qr(event){

@@ -30,6 +30,8 @@ const v42 = [
   'c.onQRCodeSessionFailed = (u, d) => {',
   'await Cke(p, U, f);',
   'const _ = await Ake(d, e, t, x, g);',
+  'if (i.some((a) => a.uin === n))',
+  'r.quickLoginWithUin(n).then(async (a) => {',
   ...common,
 ].join('\n');
 
@@ -49,6 +51,10 @@ test('NapCat 4.18.42 uses its exact renamed anchors', () => {
   assert.match(result, /ready\(p, _\)/);
   assert.match(result, /loginFailed\(u, d\)/);
   assert.match(result, /WebUI disabled/);
+  assert.match(result, /setRemerberPwd\?\.\(true\)/);
+  assert.match(result, /String\(a\.uin\) === String\(n\)/);
+  assert.match(result, /event:'napcat_recovery'|__qqFarmLogin\.recovery/);
+  assert.doesNotMatch(result, /i\.some\(\(a\) => a\.uin === n\)/);
   assert.doesNotMatch(result, /await n\.init\(/);
 });
 

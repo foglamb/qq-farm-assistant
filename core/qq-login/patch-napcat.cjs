@@ -1,4 +1,26 @@
 // Apply only to a pinned program copy, never to a user's QQ profile.
+function patchQuickLogin(text) {
+  const rememberAnchor = 'const _ = await Ake(d, e, t, x, g);';
+  const rememberMarker = '/* Persist QR quick-login tickets. */';
+  if (!text.includes(rememberMarker) && text.includes(rememberAnchor)) {
+    if (text.split(rememberAnchor).length !== 2) throw new Error('Unrecognized NapCat remember-login hook count');
+    text = text.replace(rememberAnchor, `${rememberMarker}\n  d.setRemerberPwd?.(true);\n  ${rememberAnchor}`);
+  }
+  const stale = 'if (i.some((a) => a.uin === n))';
+  const marker = 'globalThis.__qqFarmLogin.recovery({';
+  if (!text.includes(marker) && text.includes(stale)) {
+    if (text.split(stale).length !== 2) throw new Error('Unrecognized NapCat quick-login hook count');
+    text = text.replace(stale, `if (${marker}requested: !!n, historyCount: i.length, matchedHistory: n ? i.filter((a) => String(a.uin) === String(n)).length : 0, historyUinTypes: [...new Set(i.map((a) => typeof a.uin))].slice(0, 4)}), i.some((a) => String(a.uin) === String(n)))`);
+  }
+  const resultAnchor = 'r.quickLoginWithUin(n).then(async (a) => {';
+  const resultMarker = 'globalThis.__qqFarmLogin.recoveryResult({';
+  if (!text.includes(resultMarker) && text.includes(resultAnchor)) {
+    if (text.split(resultAnchor).length !== 2) throw new Error('Unrecognized NapCat quick-login result hook count');
+    text = text.replace(resultAnchor, `${resultAnchor}\n        ${resultMarker}result: /^\\d{1,20}$/.test(String(a.result ?? '')) ? String(a.result) : '', hasError: !!a.loginErrorInfo?.errMsg, quickEnabled: i.filter((item) => String(item.uin) === String(n) && item.isQuickLogin).length});`);
+  }
+  return text;
+}
+
 function patchHost(text) {
   const readyV42 = 'await globalThis.__qqFarmLogin.ready(p, _); return;';
   const staleReadyV42 = 'await globalThis.__qqFarmLogin.ready(d, p); return;';
@@ -8,9 +30,9 @@ function patchHost(text) {
   if (text.includes('globalThis.__qqFarmLogin.qr(event);')) {
     if (text.includes(staleReadyV42)) {
       if (text.split(staleReadyV42).length !== 2) throw new Error('Unrecognized NapCat ready hook count');
-      return text.replace(staleReadyV42, readyV42);
+      return patchQuickLogin(text.replace(staleReadyV42, readyV42));
     }
-    return text;
+    return patchQuickLogin(text);
   }
   function replace(old, value) {
     if (text.split(old).length !== 2) throw new Error(`Unrecognized NapCat build at: ${old.slice(0, 70)}`);
@@ -83,7 +105,7 @@ function patchHost(text) {
   }
   replace('setFileLogEnabled(e) {', 'setFileLogEnabled(e) { e = false;');
   replace('setConsoleLogEnabled(e) {', 'setConsoleLogEnabled(e) { e = false;');
-  return text;
+  return patchQuickLogin(text);
 }
 module.exports = { patchHost };
 if (require.main === module) {
