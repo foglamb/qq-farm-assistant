@@ -5,32 +5,41 @@ using Lagrange.Core.Common;
 
 namespace PadLogin;
 
-/// <summary>
-/// Android 9.2.20 signing API client. The signing service is explicitly
-/// configured by the operator; no third-party endpoint is implied.
-/// </summary>
+/// <summary>Android 9.2.20 signing client supporting both Lagrange JSON and Ktor GET APIs.</summary>
 public sealed class AndroidSignClient(string baseUrl) : AndroidBotSignProvider, IDisposable
 {
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
     private readonly string _baseUrl = baseUrl.TrimEnd('/');
+    private readonly bool _ktorStyle = string.Equals(Environment.GetEnvironmentVariable("PAD_SIGN_STYLE"), "ktor", StringComparison.OrdinalIgnoreCase);
+    private readonly HashSet<long> _registered = new();
+    private readonly SemaphoreSlim _registerLock = new(1, 1);
 
     public override bool IsWhiteListCommand(string cmd) => AndroidSignWhitelist.Commands.Contains(cmd);
 
     public override async Task<SsoSecureInfo?> GetSecSign(long uin, string cmd, int seq, ReadOnlyMemory<byte> body)
     {
-        var payload = new JsonObject
+        JsonNode? data;
+        if (_ktorStyle)
         {
-            ["uin"] = uin,
-            ["cmd"] = cmd,
-            ["seq"] = seq,
-            ["buffer"] = Convert.ToHexString(body.Span),
-            ["guid"] = Convert.ToHexString(Context.Keystore.Guid),
-            ["version"] = Context.AppInfo.PtVersion,
-            ["qua"] = Context.AppInfo.Qua,
-        };
-        var response = await Post("/sign", payload);
-        if (response is null) return null;
-        var data = response["data"];
+            var root = await GetKtor("/sign", new()
+            {
+                ["uin"] = uin.ToString(), ["cmd"] = cmd, ["seq"] = seq.ToString(),
+                ["buffer"] = Convert.ToHexString(body.Span), ["guid"] = Convert.ToHexString(Context.Keystore.Guid),
+                ["qua"] = Context.AppInfo.Qua,
+            });
+            data = root?["data"];
+        }
+        else
+        {
+            var payload = new JsonObject
+            {
+                ["uin"] = uin, ["cmd"] = cmd, ["seq"] = seq, ["buffer"] = Convert.ToHexString(body.Span),
+                ["guid"] = Convert.ToHexString(Context.Keystore.Guid),
+                ["version"] = Context.AppInfo.PtVersion, ["qua"] = Context.AppInfo.Qua,
+            };
+            var response = await Post("/sign", payload);
+            data = response?["data"];
+        }
         if (data is null) return null;
         return new SsoSecureInfo
         {
@@ -40,29 +49,78 @@ public sealed class AndroidSignClient(string baseUrl) : AndroidBotSignProvider, 
         };
     }
 
-    public override Task<byte[]> GetEnergy(long uin, string data) => GetBytes("/energy", new JsonObject
+    public override Task<byte[]> GetEnergy(long uin, string data)
     {
-        ["uin"] = uin,
-        ["data"] = data,
-        ["guid"] = Convert.ToHexString(Context.Keystore.Guid),
-        ["ver"] = Context.AppInfo.SdkInfo.SdkVersion,
-        ["version"] = Context.AppInfo.PtVersion,
-        ["qua"] = Context.AppInfo.Qua,
-    });
+        if (_ktorStyle) return GetKtorBytes("/energy", new()
+        {
+            ["uin"] = uin.ToString(), ["data"] = data, ["guid"] = Convert.ToHexString(Context.Keystore.Guid),
+            ["ver"] = Context.AppInfo.SdkInfo.SdkVersion, ["version"] = Context.AppInfo.PtVersion, ["qua"] = Context.AppInfo.Qua,
+        });
+        return GetBytes("/energy", new JsonObject
+        {
+            ["uin"] = uin, ["data"] = data, ["guid"] = Convert.ToHexString(Context.Keystore.Guid),
+            ["ver"] = Context.AppInfo.SdkInfo.SdkVersion, ["version"] = Context.AppInfo.PtVersion, ["qua"] = Context.AppInfo.Qua,
+        });
+    }
 
-    public override Task<byte[]> GetDebugXwid(long uin, string data) => GetBytes("/get_tlv553", new JsonObject
+    public override Task<byte[]> GetDebugXwid(long uin, string data)
     {
-        ["uin"] = uin,
-        ["data"] = data,
-        ["guid"] = Convert.ToHexString(Context.Keystore.Guid),
-        ["version"] = Context.AppInfo.PtVersion,
-        ["qua"] = Context.AppInfo.Qua,
-    });
+        if (_ktorStyle)
+        {
+            var guid = Convert.ToHexString(Context.Keystore.Guid);
+            return GetKtorBytes("/getXwDebugId", new() { ["uin"] = uin.ToString(), ["android_id"] = guid, ["guid"] = guid });
+        }
+        return GetBytes("/get_tlv553", new JsonObject
+        {
+            ["uin"] = uin, ["data"] = data, ["guid"] = Convert.ToHexString(Context.Keystore.Guid),
+            ["version"] = Context.AppInfo.PtVersion, ["qua"] = Context.AppInfo.Qua,
+        });
+    }
 
     private async Task<byte[]> GetBytes(string path, JsonObject payload)
     {
         var response = await Post(path, payload);
         return Hex(response?["data"]?.GetValue<string>());
+    }
+
+    private async Task<byte[]> GetKtorBytes(string path, Dictionary<string, string> query)
+    {
+        var response = await GetKtor(path, query);
+        return Hex(response?["data"]?.GetValue<string>());
+    }
+
+    private async Task<JsonObject?> GetKtor(string path, Dictionary<string, string> query)
+    {
+        if (_ktorStyle && path != "/register" && query.TryGetValue("uin", out var uin) && long.TryParse(uin, out var number)) await EnsureKtorSession(number);
+        var url = _baseUrl + path + "?" + string.Join("&", query.Select(item => $"{Uri.EscapeDataString(item.Key)}={Uri.EscapeDataString(item.Value)}"));
+        try
+        {
+            using var response = await _http.GetAsync(url);
+            if (!response.IsSuccessStatusCode) return null;
+            var root = JsonNode.Parse(await response.Content.ReadAsStringAsync())?.AsObject();
+            return root is null || root["code"]?.GetValue<int>() != 0 ? null : root;
+        }
+        catch (Exception error) when (error is HttpRequestException or TaskCanceledException or JsonException) { return null; }
+    }
+
+    private async Task EnsureKtorSession(long uin)
+    {
+        if (_registered.Contains(uin)) return;
+        await _registerLock.WaitAsync();
+        try
+        {
+            if (_registered.Contains(uin)) return;
+            var guid = Convert.ToHexString(Context.Keystore.Guid).ToLowerInvariant();
+            var root = await GetKtor("/register", new()
+            {
+                ["uin"] = uin.ToString(), ["android_id"] = guid, ["guid"] = guid,
+                ["qimei36"] = guid + "0000", ["key"] = Environment.GetEnvironmentVariable("PAD_SIGN_KEY") ?? "114514",
+                ["qua"] = Context.AppInfo.Qua, ["version"] = Context.AppInfo.PtVersion, ["code"] = Context.AppInfo.AppClientVersion.ToString(),
+            });
+            if (root is null) throw new InvalidOperationException("签名服务注册失败");
+            _registered.Add(uin);
+        }
+        finally { _registerLock.Release(); }
     }
 
     private async Task<JsonObject?> Post(string path, JsonObject payload)
@@ -76,9 +134,7 @@ public sealed class AndroidSignClient(string baseUrl) : AndroidBotSignProvider, 
             if (root is null || root["code"]?.GetValue<int>() != 0) return null;
             return root;
         }
-        catch (HttpRequestException) { return null; }
-        catch (TaskCanceledException) { return null; }
-        catch (JsonException) { return null; }
+        catch (Exception error) when (error is HttpRequestException or TaskCanceledException or JsonException) { return null; }
     }
 
     private static byte[] Hex(string? value) => string.IsNullOrEmpty(value) ? [] : Convert.FromHexString(value);

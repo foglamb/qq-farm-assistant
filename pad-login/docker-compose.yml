@@ -8,6 +8,8 @@ services:
     environment:
       PAD_TOKEN: "${PAD_TOKEN:?Set PAD_TOKEN}"
       PAD_SIGN_URL: "${PAD_SIGN_URL:-}"
+      PAD_SIGN_STYLE: "${PAD_SIGN_STYLE:-}"
+      PAD_SIGN_KEY: "${PAD_SIGN_KEY:-}"
       PAD_DATA_DIR: /data
     volumes:
       - pad-login-data:/data

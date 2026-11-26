@@ -82,6 +82,7 @@ public sealed class PadSession : IDisposable
                 SignProvider = sign,
                 AutoReconnect = true,
                 AutoReLogin = true,
+                CustomServices = [new FarmAuthService()],
             };
             if (File.Exists(_keystorePath))
             {
@@ -148,6 +149,13 @@ public sealed class PadSession : IDisposable
 
     public void SubmitCaptcha(string ticket, string randstr) => _context?.SubmitCaptcha(ticket, randstr);
     public void SubmitSms(string code) => _context?.SubmitSMSCode(code);
+
+    public async Task<FarmAuthResponse> GetFarmCodeAsync()
+    {
+        var context = _context ?? throw new InvalidOperationException("请先完成 AndroidPad 登录");
+        if (!context.IsOnline) throw new InvalidOperationException("AndroidPad 当前不在线");
+        return await context.SendEvent<FarmAuthResponse>(new FarmAuthRequest(FarmAuthPayloadRequest.Create(context)));
+    }
 
     public void Dispose()
     {

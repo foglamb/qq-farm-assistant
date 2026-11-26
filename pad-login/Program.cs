@@ -7,6 +7,7 @@ using PadLogin;
 var token = Environment.GetEnvironmentVariable("PAD_TOKEN");
 if (string.IsNullOrWhiteSpace(token)) throw new InvalidOperationException("PAD_TOKEN is required");
 var port = int.Parse(Environment.GetEnvironmentVariable("PORT") ?? "8080");
+QqTea.SelfTest();
 using var session = new PadSession();
 using var official = new OfficialMiniProgramService();
 using var listener = new HttpListener();
@@ -79,6 +80,10 @@ async Task Handle(HttpListenerContext context)
                 response.ContentType = "image/png";
                 await response.OutputStream.WriteAsync(image);
                 break;
+            case ("/api/farm-code", "POST"):
+                var farm = await session.GetFarmCodeAsync();
+                await Json(response, new { ok = farm.Ret == 0, ret = farm.Ret, message = farm.Message, code = farm.Code });
+                break;
             case ("/captcha", "POST"):
                 var captcha = await Body(request);
                 session.SubmitCaptcha(captcha["ticket"]?.GetValue<string>() ?? "", captcha["randstr"]?.GetValue<string>() ?? "");
@@ -119,12 +124,13 @@ static string Html(string token) => """
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>QQ Pad 与官方小程序取码验证</title><style>body{font-family:sans-serif;max-width:760px;margin:32px auto;padding:0 16px;background:#111827;color:#e5e7eb}button{padding:10px 18px;border:0;border-radius:8px;background:#60a5fa;font-weight:bold}input{padding:8px}img{display:block;max-width:320px;width:100%;margin:20px 0;background:white;padding:12px;border-radius:12px}pre{white-space:pre-wrap;background:#1f2937;padding:16px;border-radius:8px;word-break:break-all}section{border:1px solid #374151;border-radius:12px;padding:18px;margin-bottom:18px}</style></head>
 <body><h2>QQ Pad 与官方小程序取码验证</h2>
-<section><h3>AndroidPad 9.2.20（需要签名服务）</h3><p>首次登录使用密码，成功后只保存 keystore。此页面不连接现有 NapCat 容器。</p><p><input id="uin" inputmode="numeric" placeholder="QQ 号"> <input id="password" type="password" placeholder="QQ 密码（仅本次内存使用）"></p><button onclick="login()">开始 Pad 登录</button><div id="qr"></div><pre id="status">读取中…</pre></section>
+<section><h3>AndroidPad 9.2.20</h3><p>首次登录使用密码，成功后只保存 keystore。此页面不连接现有 NapCat 容器。</p><p><input id="uin" inputmode="numeric" placeholder="QQ 号"> <input id="password" type="password" placeholder="QQ 密码（仅本次内存使用）"></p><button onclick="login()">开始 Pad 登录</button> <button onclick="farmCode()">获取农场 Code</button><div id="qr"></div><pre id="status">读取中…</pre><pre id="farmCodeResult">登录后可测试 QQConnectLogin.auth_emp</pre></section>
 <section><h3>官方小程序旧扫码接口（已失效）</h3><p>腾讯服务端已返回“命令字不存在”，本入口已停止生成无效二维码。请使用 <a href="http://192.168.100.121:3008">主面板 3008</a> 的 QQ 原生扫码。</p><pre id="officialStatus">旧官方接口已停用</pre></section>
 <script>
 const token=__TOKEN__;let officialId='';
 async function refresh(){const r=await fetch('/api/status?token='+encodeURIComponent(token));const x=await r.json();document.querySelector('#status').textContent=JSON.stringify(x.data,null,2);document.querySelector('#qr').innerHTML=x.data.hasQr?'<img src="/qr.png?token='+encodeURIComponent(token)+'&v='+Date.now()+'">':''}
 async function login(){await fetch('/api/login',{method:'POST',headers:{'x-admin-token':token,'Content-Type':'application/json'},body:JSON.stringify({uin:document.querySelector('#uin').value,password:document.querySelector('#password').value})});document.querySelector('#password').value='';setTimeout(refresh,500)}
+async function farmCode(){document.querySelector('#farmCodeResult').textContent='正在请求 QQConnectLogin.auth_emp…';const r=await fetch('/api/farm-code',{method:'POST',headers:{'x-admin-token':token,'Content-Length':'0'}});const x=await r.json();document.querySelector('#farmCodeResult').textContent=JSON.stringify(x,null,2)}
 async function startOfficial(){const r=await fetch('/api/official/sessions',{method:'POST',headers:{'x-admin-token':token,'Content-Length':'0'}});const x=await r.json();officialId=x.data.sessionId;refreshOfficial()}
 async function refreshOfficial(){if(!officialId)return;const r=await fetch('/api/official/sessions/'+officialId+'?token='+encodeURIComponent(token));const x=await r.json();const d=x.data;document.querySelector('#officialStatus').textContent=JSON.stringify(d,null,2);document.querySelector('#officialQr').innerHTML=d.status==='waiting_scan'?'<img src="/official-qr.svg?id='+officialId+'&token='+encodeURIComponent(token)+'&v='+Date.now()+'">':''}
 setInterval(()=>{refresh();refreshOfficial()},2000);refresh()

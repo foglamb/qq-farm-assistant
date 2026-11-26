@@ -1,35 +1,47 @@
-# AndroidPad 与官方小程序取码隔离 PoC
+# AndroidPad 登录与农场 Code 隔离验证
 
 独立进程、独立端口、独立数据卷，不读取或修改现有 NapCat 容器和账号数据。
 
 ## 已验证
 
 - `Lagrange.Core 2.1.3` / .NET 8 编译通过。
-- Android 签名客户端实现 `/sign`、`/energy`、`/get_tlv553`，使用 AndroidPad 9.2.20 / `11650` 对应字段。
-- 官方小程序 `GetLoginCode`、`QueryLoginCode` 实测可用，二维码 SVG 生成通过。
-- HTTP 鉴权、健康检查、Pad 配置状态和官方二维码创建通过。
+- AndroidPad 9.2.20 / `11650` 登录配置通过。
+- 本地签名服务 `/sign`、`/energy`、`/get_tlv553` 在服务器上均实测 `code=0`，构建和证据见 `../qsign-service/`。
+- QQ TEA 通过 Lagrange 内置实现的 Span 委托调用，启动自检通过。
+- HTTP 鉴权、健康检查、Pad 到签名服务的容器网络连接通过。
+- 当前状态为 `needs_password`：等待真实账号首登，尚未声称腾讯在线登录或农场 Code 已成功。
 
-## AndroidPad 的真实限制
+## AndroidPad 首登
 
-1. Lagrange 只提供签名 HTTP 客户端，不包含签名服务端。必须自行提供兼容 Android 9.2.20 的 `PAD_SIGN_URL`。
-2. 当前 V2 的 `WtExchangeLogic.ManualLogin` 明确拒绝 Android 空密码 QR 登录，`TransEmpService` 也只给 PC/AndroidWatch 注册 QR 服务。因此 AndroidPad 首次登录需要 QQ 号和密码，成功后再用 keystore 免密恢复。
-3. `QQConnectLogin.pre_auth_emp/auth_emp` 不是简单明文 `loginWithAppId`。公开客户端源码还经过 `OpenSdkVirtualUtil` 对请求进行账号相关处理，不能把未验证的 Proto 当成可用 Code 实现。本 PoC 尚未声称 Pad 原生取码成功。
+当前 Lagrange V2 的 `WtExchangeLogic.ManualLogin` 拒绝 Android 空密码 QR 登录，`TransEmpService` 也只给 PC/AndroidWatch 注册 QR 服务。因此 AndroidPad 首次登录需要 QQ 号和密码；成功后保存 keystore，后续可免密恢复。
+
+密码只随本次请求进入内存，不写入 keystore 或状态接口。keystore 本身属于敏感登录凭据，应保护数据卷。
+
+## 农场 Code 自定义服务
+
+`FarmAuthService.cs` 注册 `QQConnectLogin.auth_emp`：
+
+- `RequestType.D2Auth + EncryptType.NoEncrypt`，避免被二次使用 D2Key 加密。
+- 请求体为 `BE32(A2.Length) || A2 || QQ_TEA_Encrypt(auth.AuthRequest, A2Key)`。
+- 默认 `appid=1112386029`、`pf=openmobile_android`、`sdkp=android`、`sdkv=1.5.9`。
+- 解析 `auth.AuthResponse` 的字段 1 `ret`、字段 2 `msg`、字段 4 `code`。
+- 可用 `FARM_PACKAGE_NAME`、`FARM_CERT_MD5`、`FARM_OPENAPI`、`FARM_APPID` 调整应用签名和权限列表。
+- 未登录时 `/api/farm-code` 会拒绝请求；真实 `ret/msg/code` 以腾讯响应为准，不预置假 Code。
 
 ## 官方小程序旧接口状态（已停用）
 
-2026-11-26 实测：`GetLoginCode` 虽仍返回标识，但 `QueryLoginCode` 和 `LoginCode` 均返回 `code:-4 / 命令字不存在`，旧扫码链已被服务端下线。PoC 已改为 fail-closed，不再生成无效二维码。主面板 3008 的 QQ 原生扫码不受此旧接口影响。
+2026-11-26 实测：`GetLoginCode` 虽仍返回标识，但 `QueryLoginCode` 和 `LoginCode` 均返回 `code:-4 / 命令字不存在`，旧扫码链已被服务端下线。PoC 已 fail-closed，不再生成无效二维码。
 
 ## 启动
 
 ```bash
 export PAD_TOKEN='replace-with-random-token'
-export PAD_SIGN_URL=''  # 仅官方小程序取码时留空
+export PAD_SIGN_URL='http://172.17.0.1:8081'
+export PAD_SIGN_STYLE=''
 docker compose up -d --build
 ```
 
 页面：`http://HOST:3009/?token=...`
-
-配置 AndroidPad 时，将 `PAD_SIGN_URL` 设为签名服务基址，例如 `http://127.0.0.1:8081`，不要包含 `/sign` 后缀。首次在页面输入 QQ 号和密码；密码只随本次请求进入内存，不写入 keystore 或状态接口。keystore 本身属于敏感登录凭据，应保护数据卷。
 
 ## HTTP 接口
 
@@ -37,8 +49,6 @@ docker compose up -d --build
 
 - `GET /api/status`：Pad 状态，不返回密码或签名地址。
 - `POST /api/login`：`{uin,password}` 启动 Pad 登录。
-- `GET /qr.png`：Pad/兼容 QR 流程二维码（如产生）。
+- `POST /api/farm-code`：调用 `QQConnectLogin.auth_emp`，返回真实 `ret/message/code`。
+- `GET /qr.png`：兼容 QR 流程二维码（如产生）。
 - `POST /captcha`、`POST /sms`：登录验证。
-- `POST /api/official/sessions`：创建官方小程序二维码。
-- `GET /api/official/sessions/:id`：扫码状态、uin 和成功后的 Code。
-- `GET /official-qr.svg?id=...`：官方二维码 SVG。
