@@ -48,6 +48,7 @@ public sealed class PadSession : IDisposable
                 hasQr = _qrImage is not null,
                 verifyUrl = _verifyUrl,
                 hasSavedSession = HasSavedSession(),
+                hasDevice = HasDevice(),
                 errors = _errors.ToArray(),
             };
         }
@@ -94,14 +95,17 @@ public sealed class PadSession : IDisposable
                 CustomServices = [new FarmAuthService()],
             };
             _context?.Dispose();
-            if (hasSaved && string.IsNullOrEmpty(password))
+            BotKeystore? saved = null;
+            if (File.Exists(_keystorePath))
             {
-                var saved = JsonSerializer.Deserialize<BotKeystore>(await File.ReadAllTextAsync(_keystorePath, _closing.Token))
-                    ?? throw new InvalidOperationException("保存的 Pad 登录态无法读取，请删除隔离数据后重试");
-                _context = BotFactory.Create(config, saved, _appInfo);
+                try { saved = JsonSerializer.Deserialize<BotKeystore>(await File.ReadAllTextAsync(_keystorePath, _closing.Token)); }
+                catch (JsonException) { saved = null; }
             }
-            else _context = BotFactory.Create(config, appInfo: _appInfo);
+            _context = saved is null
+                ? BotFactory.Create(config, appInfo: _appInfo)
+                : BotFactory.Create(config, saved, _appInfo);
             RegisterEvents(_context);
+            await PersistKeystore(_context.Keystore);
             var success = uin > 0 && !string.IsNullOrEmpty(password)
                 ? await _context.Login(uin, password, _closing.Token)
                 : await _context.Login(_closing.Token);
@@ -166,6 +170,29 @@ public sealed class PadSession : IDisposable
         catch (Exception error) when (error is IOException or JsonException or KeyNotFoundException or InvalidOperationException) { return false; }
     }
 
+    private bool HasDevice()
+    {
+        try
+        {
+            if (!File.Exists(_keystorePath)) return false;
+            using var document = JsonDocument.Parse(File.ReadAllText(_keystorePath));
+            var guid = document.RootElement.GetProperty("Guid");
+            return guid.ValueKind switch
+            {
+                JsonValueKind.String => !string.IsNullOrEmpty(guid.GetString()),
+                JsonValueKind.Array => guid.GetArrayLength() > 0,
+                _ => false,
+            };
+        }
+        catch (Exception error) when (error is IOException or JsonException or KeyNotFoundException) { return false; }
+    }
+
+    private async Task PersistKeystore(BotKeystore keystore)
+    {
+        await File.WriteAllTextAsync(_keystorePath, JsonSerializer.Serialize(keystore), _closing.Token);
+        try { File.SetUnixFileMode(_keystorePath, UnixFileMode.UserRead | UnixFileMode.UserWrite); } catch { }
+    }
+
     private void RegisterEvents(BotContext context)
     {
         context.EventInvoker.RegisterEvent<BotLogEvent>((_, args) =>
@@ -211,8 +238,7 @@ public sealed class PadSession : IDisposable
         context.EventInvoker.RegisterEvent<BotRefreshKeystoreEvent>(async (_, args) =>
         {
             if (args.Keystore.WLoginSigs.A2.Length == 0) return;
-            await File.WriteAllTextAsync(_keystorePath, JsonSerializer.Serialize(args.Keystore), _closing.Token);
-            try { File.SetUnixFileMode(_keystorePath, UnixFileMode.UserRead | UnixFileMode.UserWrite); } catch { }
+            await PersistKeystore(args.Keystore);
         });
         context.EventInvoker.RegisterEvent<BotNewDeviceVerifyEvent>((_, args) =>
         {

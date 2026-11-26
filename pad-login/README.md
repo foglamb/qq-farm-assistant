@@ -16,7 +16,7 @@
 
 当前 Lagrange V2 的 `WtExchangeLogic.ManualLogin` 拒绝 Android 空密码 QR 登录，`TransEmpService` 也只给 PC/AndroidWatch 注册 QR 服务。因此 AndroidPad 首次登录需要 QQ 号和密码；成功后保存 keystore，后续可免密恢复。
 
-密码只随本次请求进入内存，不写入 keystore 或状态接口。keystore 本身属于敏感登录凭据，应保护数据卷。
+密码只随本次请求进入内存，不写入 keystore 或状态接口。keystore 本身属于敏感登录凭据，应保护数据卷。为降低新设备风控，失败时也会保留 Guid/AndroidId 等设备字段；只有 A2 非空才计为可恢复的登录会话，`hasDevice` 与 `hasSavedSession` 分开显示。
 
 ## 农场 Code 自定义服务
 
