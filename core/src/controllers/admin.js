@@ -46,6 +46,7 @@ const { registerAdminCurrentUserRoutes } = require("./admin-current-user-routes"
 const { registerAdminYybRoutes } = require("./admin-yyb-routes");
 const { registerAdminQqLoginRoutes } = require("./admin-qq-login-routes");
 const { getQqLoginService } = require("../services/qq-login-service");
+const { createYybRuntime } = require("../services/yyb-runtime");
 const {
   registerAdminFarmOperationRoutes,
 } = require("./admin-farm-operation-routes");
@@ -511,9 +512,11 @@ function startAdminServer(dataProvider) {
     userStore,
     store,
   });
+  const yybRuntime = createYybRuntime();
   const yybRoutes = registerAdminYybRoutes({
     app,
     requireAdminToken,
+    yybRuntime,
     sendProviderError,
     getAccountsForUser,
     canAccessAccount,
@@ -523,6 +526,9 @@ function startAdminServer(dataProvider) {
       await Promise.all([provider.reloadProxyProfile(profileId), qqLogin.invalidateProxyProfile(profileId)]);
     },
   });
+  void yybRuntime.restore().catch(error => adminLogger.warn('YYB 自动恢复失败', { error: error.message }));
+  const stopYybRuntime = () => { void yybRuntime.close(); };
+  process.once('exit', stopYybRuntime);
   const qqLogin = getQqLoginService();
   qqLogin.start();
   registerAdminQqLoginRoutes({ app, requireAdminToken, qqLogin, provider, addOrUpdateAccount, userStore });
@@ -530,6 +536,7 @@ function startAdminServer(dataProvider) {
   process.once('exit', stopQqLogin);
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.once(signal, () => {
+      stopYybRuntime();
       stopQqLogin();
       setTimeout(() => process.exit(0), 1800).unref();
     });
