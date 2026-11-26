@@ -89,7 +89,7 @@ function createQqAccountImporter({ qqLogin, provider, addOrUpdateAccount, userSt
       }
       const account = { ...(existing ? { id: existing.id } : { userId, platform: 'qq', loginType: 'manual' }),
         ...(name ? { name } : {}), code: item.code, uin: item.uin, qq: item.uin,
-        qqLoginProfile, qqAutoReconnect: existing?.qqAutoReconnect !== false,
+        qqLoginProfile, qqLoginProtocol: item.protocol || 'napcat', qqAutoReconnect: existing?.qqAutoReconnect !== false,
         proxyMode: item.proxyMode || 'direct', proxyProfileId: item.proxyProfileId || null };
       let data;
       try { data = addOrUpdateAccount(account); }

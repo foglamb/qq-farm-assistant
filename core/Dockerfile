@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 # ===== Node 构建阶段（安装全量依赖 + 构建前端）=====
 FROM node:24-bookworm-slim AS builder
 
@@ -37,6 +35,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/yyb-go .
 # 复制运行时需要的 resource 目录（avatars/qr/templates）
 RUN mkdir -p /out/resource && cp -r /src/resource/. /out/resource/
 
+# AndroidPad 由 scripts/build-pad-login.sh 预先发布为 pad-login/PadLogin，
+# 避免部署服务器必须访问 .NET SDK 镜像仓库。
+
 # ===== 固定版本的 QQ/NapCat 文件源（不包含任何账号资料）=====
 # QQ + NapCat 4.18.42；由 GitHub Actions 校验归档后推入用户 GHCR。
 FROM ghcr.io/foglamb/qq-farm-assistant-runtime:4.18.42 AS qq-runtime
@@ -53,6 +54,7 @@ ENV QQ_LOGIN_ENABLED=1 \
     QQ_LOGIN_RUNTIME_DIR=/opt/qq-login \
     QQ_LOGIN_EXECUTABLE=/opt/QQ/qq \
     QQ_LOGIN_ELECTRON=1 \
+    PAD_LOGIN_EXECUTABLE=/app/pad-login/PadLogin \
     LD_LIBRARY_PATH=/opt/QQ/resources/app/sharp-lib:/opt/QQ/resources/app:/opt/QQ
 
 ARG QQ_LOGIN_DEB_URL=
@@ -71,6 +73,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # 直接拷贝 builder 全量（含 node_modules），避免 pnpm symlink / 多阶段覆盖坑
 COPY --from=builder /app /app
+COPY pad-login/PadLogin /app/pad-login/PadLogin
+RUN chmod 755 /app/pad-login/PadLogin
 
 # 仅复制程序文件；NapCat ZIP 在安装时再次校验 SHA-256。
 COPY --from=qq-runtime /opt/QQ /opt/QQ

@@ -12,11 +12,41 @@
 - `FARM_AUTH_ROUNDTRIP=PASS`：MiniApp GetCode 与旧 auth/auth_emp 诊断服务均通过离线回环测试（`PAD_SELF_TEST=1`）。
 - `LightAppSvc.mini_program_auth.GetCode` 真实账号连续两次返回 `ret=0` 和非空 32 位 Code。
 
-## AndroidPad 首登
+## AndroidPad 登录路径与验证边界
 
-当前 Lagrange V2 的 `WtExchangeLogic.ManualLogin` 拒绝 Android 空密码 QR 登录，`TransEmpService` 也只给 PC/AndroidWatch 注册 QR 服务。因此 AndroidPad 首次登录需要 QQ 号和密码；成功后保存 keystore，后续可免密恢复。
+AndroidPad 在本交付中使用账号密码登录；密码只随本次请求进入内存，不写入 keystore 或状态接口。腾讯要求时通过真实 Captcha/SMS 续登，成功后使用 keystore 免密恢复。keystore 本身属于敏感登录凭据，应保护数据卷。失败时也会保留 Guid/AndroidId 等设备字段；只有 A2 非空才计为可恢复会话。
 
-密码只随本次请求进入内存，不写入 keystore 或状态接口。keystore 本身属于敏感登录凭据，应保护数据卷。为降低新设备风控，失败时也会保留 Guid/AndroidId 等设备字段；只有 A2 非空才计为可恢复的登录会话，`hasDevice` 与 `hasSavedSession` 分开显示。
+实验性 Watch/Pad QR 已在三轮真实手机验证中被腾讯风险校验拦截，因此不作为交付功能；多账号扫码由原 NapCat 链承担。
+
+## Node JSON-lines 宿主
+
+```bash
+PadLogin --json-lines SESSION_DIR
+# 开发环境：
+PAD_SIGN_URL='...' /tmp/dotnet8/dotnet run -- --json-lines SESSION_DIR
+```
+
+stdin 每行一个 JSON 命令：
+
+- `{"command":"start","mode":"password","uin":"QQ_UIN","password":"MEMORY_ONLY"}`；恢复模式使用 `mode:"restore"` 和 `uin`。`mode:"qr"` 会返回密码/NapCat 指引。
+- `{"command":"request_code","requestId":"REQ_ID"}`：在线时调用 `FarmCodeService.GetCode`，非零 ret 原样进入错误状态。
+- `{"command":"submit_captcha","ticket":"TICKET","randstr":"RANDSTR"}`。
+- `{"command":"submit_sms","code":"CODE"}`。
+- `{"command":"shutdown"}`。
+
+stdout 只写 `QQFARM_LOGIN:{...}` 帧，事件为 `session/state/code`。真实 Code 仅出现在 `kind:"code"` 的 `value.code`，不额外打印；第三方 stdout 会转到 stderr。state 使用 Node 已有 PHASES，并在验证场景使用 `needs_captcha/needs_device_verify/verifying/online`。
+
+keystore 固定保存到 `SESSION_DIR/qq-data/keystore.json`，构造会话时即创建 `qq-data`；密码不落盘。
+
+## 离线自测
+
+```bash
+/tmp/dotnet8/dotnet build --no-restore
+PAD_SELF_TEST=1 /tmp/dotnet8/dotnet run --no-build
+```
+
+自测覆盖 MiniApp GetCode 编解码回环；Node 测试覆盖 JSON-lines 启动、密码不落盘、恢复、逐会话验证路由和协议持久化。成功输出 `FARM_AUTH_ROUNDTRIP=PASS` 和 `PAD_SELF_TEST=PASS`；不访问 QQ 服务器，也不替代真实账号验收。
+
 
 ## 农场 Code 自定义服务
 
@@ -56,5 +86,5 @@ docker compose up -d --build
 - `GET /api/status`：Pad 状态，不返回密码或签名地址；`errors` 仅保留最近 20 条 Warning/Error/Critical 日志，用于定位腾讯登录失败。
 - `POST /api/login`：`{uin,password}` 启动 Pad 登录。
 - `POST /api/farm-code`：默认调用 `LightAppSvc.mini_program_auth.GetCode`，返回真实 `ret/message/code`。
-- `GET /qr.png`：兼容 QR 流程二维码（如产生）。
+- `GET /qr.png`：仅保留历史接口兼容；当前密码登录不产生二维码。
 - `POST /captcha`、`POST /sms`：登录验证。

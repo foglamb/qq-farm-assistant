@@ -1,0 +1,13 @@
+# 网络受限服务器的增量构建：先准备 web/dist 与 pad-login/PadLogin。
+# 基础镜像只含程序运行时，不包含任何账号数据；容器仍挂载原有数据卷。
+ARG BASE_IMAGE=ghcr.io/foglamb/qq-farm-assistant:ondemand
+FROM ${BASE_IMAGE}
+
+WORKDIR /app/core
+ENV PAD_LOGIN_EXECUTABLE=/app/pad-login/PadLogin
+
+COPY core /app/core
+COPY web/dist /app/web/dist
+COPY scripts /app/scripts
+COPY pad-login/PadLogin /app/pad-login/PadLogin
+RUN chmod 755 /app/pad-login/PadLogin

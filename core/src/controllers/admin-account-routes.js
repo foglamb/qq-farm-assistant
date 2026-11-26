@@ -2,7 +2,7 @@ const { createRefreshJobStore, sanitizeRefreshText } = require('../models/refres
 const editableAccountFields = new Set([
   'id', 'name', 'code', 'platform', 'loginType', 'provider', 'thirdparty',
   'wxid', 'uin', 'qq', 'yybOpenid', 'proxyMode', 'proxyProfileId',
-  'qqAutoReconnect', 'autoStart', 'userId',
+  'qqAutoReconnect', 'qqLoginProtocol', 'autoStart', 'userId',
 ]);
 
 function createLogQuery(query) {

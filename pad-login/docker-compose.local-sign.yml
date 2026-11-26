@@ -1,0 +1,7 @@
+services:
+  pad-login:
+    environment:
+      # 保持 AndroidPad 9.3.65 元数据不变，仅把公共 sign/energy 换成本机 8083。
+      PAD_SIGN_URL: "http://172.17.0.1:8083"
+      PAD_SIGN_STYLE: "remix"
+      PAD_LOCAL_XWID_URL: "http://172.17.0.1:8083"

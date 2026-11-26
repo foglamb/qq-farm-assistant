@@ -11,7 +11,7 @@ const props = defineProps<{
   show: boolean
   editData?: any
   // 打开时默认选中的登录方式
-  defaultTab?: 'manual' | 'yyb' | 'qq'
+  defaultTab?: 'manual' | 'pad' | 'napcat' | 'yyb'
   // 更新已有应用宝账号时，禁止扫码后误新增其他微信身份
   yybUpdateOnly?: boolean
 }>()
@@ -19,7 +19,7 @@ const props = defineProps<{
 const emit = defineEmits(['close', 'saved', 'refresh'])
 const CODE_QUERY_RE = /[?&]code=([^&]+)/i
 
-type AccountTab = 'manual' | 'yyb' | 'qq'
+type AccountTab = 'manual' | 'pad' | 'napcat' | 'yyb'
 type YybLoginStage = 'idle' | 'creating' | 'pending' | 'scanned' | 'unknown' | 'authorized' | 'importing' | 'starting' | 'success' | 'expired' | 'error'
 type YybStartStatus = 'saved' | 'starting' | 'online' | 'failed' | 'reconnecting' | 'unconfirmed'
 
@@ -621,13 +621,25 @@ onBeforeUnmount(() => {
             v-if="!editData"
             type="button"
             role="tab"
-            :aria-selected="activeTab === 'qq'"
+            :aria-selected="activeTab === 'pad'"
             class="min-h-11 flex-1 whitespace-nowrap px-1 text-center text-xs font-medium transition-colors sm:text-sm"
-            :class="activeTab === 'qq' ? 'border-b-2' : 'opacity-60'"
-            :style="{ color: activeTab === 'qq' ? 'var(--theme-primary)' : 'var(--theme-text)', borderColor: 'var(--theme-primary)' }"
-            @click="activeTab = 'qq'"
+            :class="activeTab === 'pad' ? 'border-b-2' : 'opacity-60'"
+            :style="{ color: activeTab === 'pad' ? 'var(--theme-primary)' : 'var(--theme-text)', borderColor: 'var(--theme-primary)' }"
+            @click="activeTab = 'pad'"
           >
-            QQ 扫码登录
+            Pad 账密
+          </button>
+          <button
+            v-if="!editData"
+            type="button"
+            role="tab"
+            :aria-selected="activeTab === 'napcat'"
+            class="min-h-11 flex-1 whitespace-nowrap px-1 text-center text-xs font-medium transition-colors sm:text-sm"
+            :class="activeTab === 'napcat' ? 'border-b-2' : 'opacity-60'"
+            :style="{ color: activeTab === 'napcat' ? 'var(--theme-primary)' : 'var(--theme-text)', borderColor: 'var(--theme-primary)' }"
+            @click="activeTab = 'napcat'"
+          >
+            NapCat 扫码
           </button>
           <button
             type="button"
@@ -641,11 +653,17 @@ onBeforeUnmount(() => {
             }"
             @click="activeTab = 'yyb'"
           >
-            应用宝扫码
+            YYB 协议登录
           </button>
         </div>
 
-        <QqScanLogin v-if="show && activeTab === 'qq' && !editData" @saved="(accountId: string) => emit('refresh', accountId)" @close="close" />
+        <QqScanLogin
+          v-if="show && (activeTab === 'pad' || activeTab === 'napcat') && !editData"
+          :key="activeTab"
+          :initial-protocol="activeTab"
+          @saved="(accountId: string) => emit('refresh', accountId)"
+          @close="close"
+        />
 
         <div v-if="activeTab === 'yyb'" class="space-y-4">
           <template v-if="yybSuccess">

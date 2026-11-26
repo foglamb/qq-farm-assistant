@@ -1433,6 +1433,7 @@ function addOrUpdateAccount(account) {
     for (const field of ['autoStart', 'qqAutoReconnect']) {
         if (Object.hasOwn(account, field) && typeof account[field] !== 'boolean') throw Object.assign(new Error(`${field} 必须是布尔值`), { status: 400 });
     }
+    if (Object.hasOwn(account, 'qqLoginProtocol') && !['pad', 'napcat'].includes(account.qqLoginProtocol)) throw Object.assign(new Error('qqLoginProtocol 必须是 pad 或 napcat'), { status: 400 });
     const data = getAccounts();
     const previous = account.id ? data.accounts.find(item => item.id === account.id) : null;
     if (account.id) {
@@ -1505,6 +1506,7 @@ function addOrUpdateAccount(account) {
             userId: assertUserId(account.userId),
             yybOpenid: account.yybOpenid ? String(account.yybOpenid) : '',
             qqLoginProfile: account.qqLoginProfile || '',
+            qqLoginProtocol: account.qqLoginProtocol === 'pad' ? 'pad' : 'napcat',
             qqAutoReconnect: account.qqAutoReconnect !== false,
             autoStart: account.autoStart !== false,
             createdAt: Date.now(),

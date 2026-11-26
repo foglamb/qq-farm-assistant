@@ -7,7 +7,7 @@ using Lagrange.Core.Events.EventArgs;
 
 namespace PadLogin;
 
-public sealed class PadSession : IDisposable
+public sealed partial class PadSession : IDisposable
 {
     private readonly string _dataDir;
     private readonly string _keystorePath;
@@ -22,16 +22,24 @@ public sealed class PadSession : IDisposable
     private string? _loginError;
     private readonly List<string> _errors = new();
     private string? _verifyUrl;
+    private string? _phone;
 
-    public PadSession()
+    public PadSession(string? sessionDirectory = null)
     {
-        _dataDir = Environment.GetEnvironmentVariable("PAD_DATA_DIR") ?? Path.Combine(Directory.GetCurrentDirectory(), "data");
+        _dataDir = sessionDirectory is null
+            ? Environment.GetEnvironmentVariable("PAD_DATA_DIR") ?? Path.Combine(Directory.GetCurrentDirectory(), "data")
+            : Path.Combine(Path.GetFullPath(sessionDirectory), "qq-data");
         Directory.CreateDirectory(_dataDir);
         _keystorePath = Path.Combine(_dataDir, "keystore.json");
         _appInfo = CreateAppInfo();
     }
 
     public bool SignConfigured => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("PAD_SIGN_URL"));
+
+    internal string KeystorePath => _keystorePath;
+    public long? Uin => _context?.Keystore.Uin > 0 ? _context.Keystore.Uin : null;
+    public bool CanRequestCode => _context?.IsOnline == true;
+    public string? Phone { get { lock (_sync) return _phone; } }
 
     public object Status()
     {
@@ -47,10 +55,19 @@ public sealed class PadSession : IDisposable
                 signMode = Environment.GetEnvironmentVariable("PAD_SIGN_STYLE") ?? "json",
                 hasQr = _qrImage is not null,
                 verifyUrl = _verifyUrl,
+                phone = _phone,
                 hasSavedSession = HasSavedSession(),
                 hasDevice = HasDevice(),
                 errors = _errors.ToArray(),
             };
+        }
+    }
+
+    public PadSessionSnapshot Snapshot()
+    {
+        lock (_sync)
+        {
+            return new PadSessionSnapshot(_phase, _detail, CanRequestCode, _verifyUrl, _phone, _context?.Keystore.Uin > 0 ? _context.Keystore.Uin : null);
         }
     }
 
@@ -63,7 +80,7 @@ public sealed class PadSession : IDisposable
     {
         if (!SignConfigured)
         {
-            lock (_sync) { _phase = "error"; _detail = "未配置 PAD_SIGN_URL；需要 Android 9.2.20 签名服务"; }
+            lock (_sync) { _phase = "error"; _detail = "未配置 PAD_SIGN_URL；需要兼容当前 AndroidPad 版本的签名服务"; }
             return;
         }
         var hasSaved = HasSavedSession();
@@ -84,6 +101,7 @@ public sealed class PadSession : IDisposable
                 _verifyUrl = null;
                 _loginError = null;
                 _errors.Clear();
+                _phone = null;
             }
             var sign = new AndroidSignClient(Environment.GetEnvironmentVariable("PAD_SIGN_URL")!);
             var config = new BotConfig
@@ -252,7 +270,11 @@ public sealed class PadSession : IDisposable
         });
     }
 
-    public bool SubmitCaptcha(string ticket, string randstr)
+    public bool SubmitCaptcha(string ticket, string randstr) => SubmitCaptchaAsync(ticket, randstr).GetAwaiter().GetResult();
+
+    public bool SubmitSms(string code) => SubmitSmsAsync(code).GetAwaiter().GetResult();
+
+    public async Task<bool> SubmitCaptchaAsync(string ticket, string randstr)
     {
         var context = _context ?? throw new InvalidOperationException("登录会话不存在，请重新登录");
         var accepted = context.SubmitCaptcha(ticket, randstr);
@@ -262,10 +284,11 @@ public sealed class PadSession : IDisposable
             _detail = accepted ? "验证码已提交，正在等待腾讯登录结果" : "验证码会话已结束，请重新输入密码登录";
             if (accepted) _verifyUrl = null;
         }
+        await Task.CompletedTask;
         return accepted;
     }
 
-    public bool SubmitSms(string code)
+    public async Task<bool> SubmitSmsAsync(string code)
     {
         var context = _context ?? throw new InvalidOperationException("登录会话不存在，请重新登录");
         var accepted = context.SubmitSMSCode(code);
@@ -275,6 +298,7 @@ public sealed class PadSession : IDisposable
             _detail = accepted ? "短信码已提交，正在等待腾讯登录结果" : "短信验证会话已结束，请重新输入密码登录";
             if (accepted) _verifyUrl = null;
         }
+        await Task.CompletedTask;
         return accepted;
     }
 
@@ -298,6 +322,7 @@ public sealed class PadSession : IDisposable
     {
         _closing.Cancel();
         try { _context?.Logout().GetAwaiter().GetResult(); } catch { }
+        _context?.Dispose();
         _closing.Dispose();
         _loginLock.Dispose();
     }

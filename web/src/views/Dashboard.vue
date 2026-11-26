@@ -54,7 +54,7 @@ const { dashboardItems } = storeToRefs(bagStore)
 const showAccountDropdown = ref(false)
 const showAccountModal = ref(false)
 const showCareerModal = ref(false)
-const accountModalDefaultTab = ref<'manual' | 'yyb' | undefined>(undefined)
+const accountModalDefaultTab = ref<'manual' | 'pad' | 'napcat' | 'yyb' | undefined>(undefined)
 // —— 更新 Code 并重连 ——
 const showUpdateCodeModal = ref(false)
 const qqScanAccount = ref<Account | null>(null)

@@ -2,7 +2,7 @@ services:
   qq-farm-bot:
     build:
       context: .
-      dockerfile: core/Dockerfile
+      dockerfile: ${DOCKERFILE:-core/Dockerfile}
       args:
         # Optional mirrors; keep the matching checksum when changing a URL.
         - QQ_LOGIN_DEB_URL=${QQ_LOGIN_DEB_URL:-}
@@ -28,6 +28,20 @@ services:
       - QQ_LOGIN_MAX_SESSIONS=${QQ_LOGIN_MAX_SESSIONS:-3}
       # 0=按需取码：成功后关闭QQ/NapCat进程，保留登录资料供下次恢复
       - QQ_LOGIN_RESIDENT=${QQ_LOGIN_RESIDENT:-1}
+      - QQ_LOGIN_PROTOCOL=${QQ_LOGIN_PROTOCOL:-napcat}
+      - PAD_SIGN_URL=${PAD_SIGN_URL:-}
+      - PAD_SIGN_STYLE=${PAD_SIGN_STYLE:-}
+      - PAD_LOCAL_XWID_URL=${PAD_LOCAL_XWID_URL:-}
+      - PAD_PT_VERSION=${PAD_PT_VERSION:-}
+      - PAD_QUA=${PAD_QUA:-}
+      - PAD_CURRENT_VERSION=${PAD_CURRENT_VERSION:-}
+      - PAD_SUB_APP_ID=${PAD_SUB_APP_ID:-}
+      - PAD_APP_CLIENT_VERSION=${PAD_APP_CLIENT_VERSION:-}
+      - PAD_SDK_BUILD_TIME=${PAD_SDK_BUILD_TIME:-}
+      - PAD_SDK_VERSION=${PAD_SDK_VERSION:-}
+      - PAD_MISC_BITMAP=${PAD_MISC_BITMAP:-}
+      - PAD_SUB_SIG_MAP=${PAD_SUB_SIG_MAP:-}
+      - PAD_MAIN_SIG_MAP=${PAD_MAIN_SIG_MAP:-}
       - QQ_LOGIN_SOCKS_PROXY=${QQ_LOGIN_SOCKS_PROXY:-}
       # ===== 应用宝 Go 服务（默认关闭；可在设置中开启，重启后保留选择）=====
       - YYB_ENABLED=${YYB_ENABLED:-0}

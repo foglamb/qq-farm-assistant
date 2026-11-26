@@ -10,10 +10,10 @@ const saving = ref(false)
 </script>
 
 <template>
-  <ModalOverlay :show="show" title="QQ 扫码更新" :busy="saving" @close="emit('close')">
+  <ModalOverlay :show="show" title="QQ 登录更新" :busy="saving" @close="emit('close')">
     <div class="ui-modal-panel max-w-md w-full rounded-2xl p-5 shadow-2xl" :style="{ background: 'var(--surface-1, #fff)', color: 'var(--theme-text)' }">
       <h3 class="text-base font-semibold">
-        QQ 扫码更新
+        QQ 登录更新
       </h3>
       <p class="mb-4 mt-1 break-words text-sm opacity-70">
         更新账号：{{ account?.nick || account?.name || account?.id }}

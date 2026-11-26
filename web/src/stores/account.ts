@@ -22,6 +22,7 @@ export interface Account {
   proxyProfileId?: number | null
   qqAutoCodeAvailable?: boolean
   qqAutoReconnect?: boolean
+  qqLoginProtocol?: 'pad' | 'napcat'
   yybOpenid?: string
   autoStart?: boolean
   running?: boolean

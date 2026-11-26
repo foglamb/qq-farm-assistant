@@ -16,6 +16,9 @@ else
   echo "==> 已存在 .env，沿用其中的 YYB_API_TOKEN"
 fi
 
+echo "==> 发布 AndroidPad 自包含宿主 ..."
+sh scripts/build-pad-login.sh
+
 echo "==> 构建并启动 (docker compose up -d --build) ..."
 docker compose up -d --build
 

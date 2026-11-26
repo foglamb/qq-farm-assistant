@@ -7,6 +7,8 @@ web/dist/
 web/stats.html
 dist/
 build/
+pad-login/PadLogin
+pad-login/.publish/
 coverage/
 web/test-results/
 web/playwright-report/

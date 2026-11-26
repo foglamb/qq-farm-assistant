@@ -21,6 +21,7 @@ public sealed class AndroidSignClient(string baseUrl) : AndroidBotSignProvider, 
 
     public override async Task<SsoSecureInfo?> GetSecSign(long uin, string cmd, int seq, ReadOnlyMemory<byte> body)
     {
+        if (cmd == "wtlogin.trans_emp" && Environment.GetEnvironmentVariable("PAD_QR_UNSIGNED") == "1") return null;
         JsonNode? data;
         if (_ktorStyle)
         {
@@ -110,7 +111,7 @@ public sealed class AndroidSignClient(string baseUrl) : AndroidBotSignProvider, 
     private async Task<JsonObject?> GetKtor(string path, Dictionary<string, string> query)
     {
         if (_ktorStyle && !_remixStyle && path != "/register" && query.TryGetValue("uin", out var uin) && long.TryParse(uin, out var number)) await EnsureKtorSession(number);
-        var url = _baseUrl + path + "?" + string.Join("&", query.Select(item => $"{Uri.EscapeDataString(item.Key)}={Uri.EscapeDataString(item.Value)}"));
+        var url = _baseUrl + path + "?" + string.Join("&", query.Select(item => $"{Uri.EscapeDataString(item.Key)}={Uri.EscapeDataString(item.Value ?? "")}"));
         try
         {
             using var response = await _http.GetAsync(url);

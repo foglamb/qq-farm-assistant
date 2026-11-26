@@ -4,10 +4,11 @@ const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 const { getDataDir, getProgramRoot } = require('../config/runtime-paths');
 const { credentialMetadata } = require('./code-lifecycle');
+const { padLaunch } = require('./pad-login-launch');
 
 const PREFIX = Buffer.from('QQFARM_LOGIN:');
 const MAX_LINE = 3 * 1024 * 1024;
-const PHASES = new Set(['starting', 'waiting_scan', 'scanned', 'initializing', 'requesting', 'success', 'login_failed', 'expired', 'offline', 'error']);
+const PHASES = new Set(['starting', 'waiting_scan', 'scanned', 'initializing', 'requesting', 'success', 'login_failed', 'expired', 'offline', 'error', 'needs_captcha', 'needs_device_verify', 'verifying', 'online', 'needs_password']);
 const validCode = value => typeof value === 'string' && /^[\w.~+/=%-]{8,2048}$/.test(value) && !/^[-+]?\d+$/.test(value);
 
 class QqScanError extends Error {
@@ -22,7 +23,7 @@ function nativeLaunch(environment = process.env) {
   if (![host, path.join(runtime, 'wrapper.node'), path.join(runtime, 'napcat', 'napcat.mjs'), executable].every(file => fs.existsSync(file))) {
     throw new QqScanError('QQ 扫码组件未安装，请使用包含扫码组件的完整部署包', 503, 'configuration');
   }
-  return { component, runtime, host, executable, electron: environment.QQ_LOGIN_ELECTRON === '1' };
+  return { protocol: 'napcat', component, runtime, host, executable, electron: environment.QQ_LOGIN_ELECTRON === '1' };
 }
 
 function helperEnvironment(sessionDir, launch, environment = process.env) {
@@ -59,6 +60,8 @@ class QqLoginService {
     this.environment = options.environment || process.env;
     this.spawn = options.spawn || spawn;
     this.getLaunch = options.getLaunch || (() => nativeLaunch(this.environment));
+    this.getPadLaunch = options.getPadLaunch || (() => padLaunch(this.environment));
+    this.defaultProtocol = options.defaultProtocol || this.environment.QQ_LOGIN_PROTOCOL || 'napcat';
     this.dataDir = options.dataDir || path.join(getDataDir(), 'qq-login');
     this.maxSessions = Number(options.maxSessions ?? this.environment.QQ_LOGIN_MAX_SESSIONS ?? 3);
     // Resident mode remains the upstream default. On-demand mode retains only
@@ -88,20 +91,28 @@ class QqLoginService {
     }
   }
 
+  resolveLaunch(options = {}) {
+    const protocol = options.protocol || options.qqLoginProtocol || this.defaultProtocol;
+    if (protocol === 'pad') return this.getPadLaunch();
+    if (protocol === 'napcat') return { protocol: 'napcat', ...this.getLaunch() };
+    throw new QqScanError('QQ 登录协议无效，请选择 AndroidPad 或 NapCat', 400, 'configuration');
+  }
+
   status({ owner, admin = false } = {}) {
     const enabled = !this.closed && this.environment.QQ_LOGIN_ENABLED !== '0';
     let installed = false; let error = '';
-    try { this.getLaunch(); installed = true; }
+    try { this.resolveLaunch(); installed = true; }
     catch (cause) { error = cause instanceof QqScanError ? cause.message : 'QQ 扫码组件暂时不可用'; }
     const activeSessions = [...this.sessions.values()].filter(item => !item.accountKey && (admin || item.owner === owner)).length;
     const userId = Number(owner?.split(':')[0]);
     const residentAccounts = [...this.accountSessions.values()].filter(item => !item.disposed && !item.exited && (admin || item.accountUserId === userId)).length;
     return { enabled, installed, available: enabled && installed, running: activeSessions > 0 || residentAccounts > 0 || (admin && !!this.warm),
-      activeSessions, residentAccounts, error: error || this.prewarmError, lastRecovery: admin ? this.lastRecovery : null };
+      activeSessions, residentAccounts, protocol: this.defaultProtocol, error: error || this.prewarmError, lastRecovery: admin ? this.lastRecovery : null };
   }
 
   launch(options = {}) {
-    const launch = this.getLaunch();
+    const launch = this.resolveLaunch(options);
+    if (launch.protocol === 'pad' && options.nativeProxyURL) throw new QqScanError('AndroidPad 当前使用直连，请先关闭 NapCat 代理设置', 400, 'configuration');
     // The native client writes directly to its own persistent profile. Never
     // copy a live QQ database or change its working directory after login.
     const profileId = options.profileDirectory ? path.basename(options.profileDirectory) : crypto.randomUUID();
@@ -110,12 +121,17 @@ class QqLoginService {
     if (this.activeProfiles.has(profileId)) throw new QqScanError('该账号 QQ 进程正在停止，请稍后重试', 429);
     fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
     if (fs.lstatSync(directory).isSymbolicLink()) throw new QqScanError('QQ 登录资料目录无效', 503, 'configuration');
+    const { password: startPassword, ...sessionOptions } = options;
+    if (launch.protocol === 'pad' && !options.restoreUin && !startPassword)
+      throw new QqScanError('AndroidPad 使用账号密码登录；多账号扫码请使用 NapCat', 400, 'pad_qr_blocked');
     const item = { id: crypto.randomUUID(), owner: null, directory, phase: 'starting', message: '正在生成 QQ 二维码',
       image: '', code: '', canRequest: false, version: 0, createdAt: this.now(), expiresAt: this.now() + this.ttlMs, disposed: false,
-      abortController: new AbortController(), ...options, profileId, retainDirectory: !!options.profileDirectory };
+      abortController: new AbortController(), ...sessionOptions, protocol: launch.protocol, profileId, retainDirectory: !!options.profileDirectory };
     try {
       if (options.userId) fs.writeFileSync(path.join(directory, 'owner.json'), JSON.stringify({ userId: options.userId, targetUserId: options.targetUserId ?? null }), { mode: 0o600 });
-      const args = launch.electron ? ['--no-sandbox'] : [launch.host, launch.runtime, directory];
+      const args = launch.protocol === 'pad'
+        ? [...launch.argsPrefix, '--json-lines', directory]
+        : launch.electron ? ['--no-sandbox'] : [launch.host, launch.runtime, directory];
       const environment = options.nativeProxyURL !== undefined ? { ...this.environment, QQ_LOGIN_SOCKS_PROXY: options.nativeProxyURL } : this.environment;
       const env = helperEnvironment(directory, launch, environment);
       if (options.restoreUin) env.FARM_QQ_RESTORE_UIN = String(options.restoreUin);
@@ -143,6 +159,10 @@ class QqLoginService {
         if (pending.length > MAX_LINE) { pending = Buffer.alloc(0); dropping = true; }
       });
       item.child.stdin.on('error', () => {});
+      if (launch.protocol === 'pad') {
+        const mode = options.restoreUin ? 'restore' : startPassword ? 'password' : 'qr';
+        item.child.stdin.write(`${JSON.stringify({ command: 'start', mode, uin: String(options.restoreUin || options.uin || ''), ...(startPassword ? { password: startPassword } : {}) })}\n`);
+      }
       item.child.on('error', () => this.fail(item, 'QQ 扫码组件无法启动，请检查部署文件'));
       const exited = () => {
         if (item.exited) return;
@@ -188,8 +208,11 @@ class QqLoginService {
         // A native result remains retrievable even if the helper later exits.
         if (item.code && !item.codeResolve && !item.accountKey) return;
         item.phase = value.phase; item.message = String(value.message || '').slice(0, 240); item.canRequest = value.canRequest === true;
+        item.verifyUrl = typeof value.verifyUrl === 'string' ? value.verifyUrl.slice(0, 4096) : '';
+        item.phone = typeof value.phone === 'string' ? value.phone.slice(0, 64) : '';
         if (['offline', 'waiting_scan', 'expired', 'login_failed'].includes(value.phase)) item.nativeOnline = false;
-        if (value.phase === 'success') item.nativeOnline = true;
+        if (value.phase === 'success' || value.phase === 'online') item.nativeOnline = true;
+        if (['needs_captcha', 'needs_device_verify', 'verifying'].includes(value.phase)) clearTimeout(item.startTimer);
         if (['error', 'offline', 'expired', 'login_failed'].includes(value.phase)) {
           clearTimeout(item.startTimer);
           item.image = '';
@@ -257,13 +280,16 @@ class QqLoginService {
     let item = this.warm;
     this.warm = null;
     const requestedProxy = options.nativeProxyURL ?? this.environment.QQ_LOGIN_SOCKS_PROXY ?? '';
+    const requestedProtocol = options.protocol || this.defaultProtocol;
+    if (item && item.protocol !== requestedProtocol) { this.dispose(item); item = null; }
     if (item && requestedProxy !== (this.environment.QQ_LOGIN_SOCKS_PROXY || '')) { this.dispose(item); item = null; }
     if (!item || ['error', 'expired', 'login_failed', 'offline'].includes(item.phase) || item.disposed
       || (item.qrExpiresAt && item.qrExpiresAt <= this.now())) {
       if (item) this.dispose(item);
       item = this.launch(options);
     }
-    Object.assign(item, options);
+    const { password: _password, ...sessionOptions } = options;
+    Object.assign(item, sessionOptions);
     item.owner = owner; item.userId = userId; item.expiresAt = this.now() + this.ttlMs;
     fs.writeFileSync(path.join(item.directory, 'owner.json'), JSON.stringify({ userId, targetUserId: options.targetUserId ?? null }), { mode: 0o600 });
     this.sessions.set(item.id, item);
@@ -279,6 +305,7 @@ class QqLoginService {
 
   snapshot(item) {
     return { sessionId: item.id, status: item.phase, message: item.message, image: item.image, code: item.code,
+      protocol: item.protocol, verifyUrl: item.verifyUrl || '', phone: item.phone || '',
       expiresAt: item.expiresAt, qrVersion: item.version };
   }
   get(owner, id) { return this.snapshot(this.owned(owner, id)); }
@@ -311,6 +338,20 @@ class QqLoginService {
     if (!item.accountKey) this.dispose(item);
   }
   cancel(owner, id) { this.releaseScan(this.owned(owner, id)); }
+  submitCaptcha(owner, id, ticket, randstr) {
+    const item = this.owned(owner, id);
+    if (item.protocol !== 'pad' || !item.child || item.disposed || item.stopping) throw new QqScanError('当前会话不能提交验证码', 409);
+    if (!ticket || !randstr) throw new QqScanError('请先完成腾讯滑块验证');
+    item.child.stdin.write(`${JSON.stringify({ command: 'submit_captcha', ticket, randstr })}\n`);
+    return true;
+  }
+  submitSms(owner, id, code) {
+    const item = this.owned(owner, id);
+    if (item.protocol !== 'pad' || !item.child || item.disposed || item.stopping) throw new QqScanError('当前会话不能提交短信码', 409);
+    if (!code) throw new QqScanError('请输入短信验证码');
+    item.child.stdin.write(`${JSON.stringify({ command: 'submit_sms', code })}\n`);
+    return true;
+  }
   sweep() {
     for (const item of this.sessions.values()) if (item.expiresAt <= this.now()) this.releaseScan(item);
     if (this.warm && this.warm.expiresAt <= this.now()) { this.dispose(this.warm); this.warm = null; }
@@ -388,7 +429,7 @@ class QqLoginService {
 
   sessionIdentity(account) {
     return JSON.stringify([account.userId, String(account.id), String(account.uin || account.qq), account.qqLoginProfile,
-      account.proxyMode || 'direct', account.proxyProfileId || null]);
+      account.qqLoginProtocol || 'napcat', account.proxyMode || 'direct', account.proxyProfileId || null]);
   }
 
   rememberCodeMetadata(item) {
@@ -601,7 +642,7 @@ class QqLoginService {
         if (this.retiredUsers.has(account.userId) || this.suspendedUsers.has(account.userId)) throw new QqScanError('用户已停用', 403);
         if (this.warm) { this.dispose(this.warm); this.warm = null; }
         item = this.launch({ ...setting, userId: account.userId, accountUserId: account.userId, accountKey: key,
-          targetAccountId: String(account.id), sessionIdentity, restoring: true,
+          targetAccountId: String(account.id), sessionIdentity, restoring: true, protocol: account.qqLoginProtocol || 'napcat',
           proxyURL, proxyBridge, nativeProxyURL: proxyBridge?.url || '', profileDirectory: directory, restoreUin: identity.uin });
         this.accountSessions.set(key, item);
         const deadline = Date.now() + 65000;
