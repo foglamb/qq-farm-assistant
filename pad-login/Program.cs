@@ -36,6 +36,12 @@ async Task Handle(HttpListenerContext context)
     {
         var path = request.Url?.AbsolutePath ?? "/";
         if (path == "/health") { await Json(response, new { ok = true }); return; }
+        if (path == "/" && request.HttpMethod == "GET" && request.QueryString["token"] != token && request.Headers["x-admin-token"] != token)
+        {
+            response.ContentType = "text/html; charset=utf-8";
+            await response.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(AccessHtml()));
+            return;
+        }
         if (request.Headers["x-admin-token"] != token && request.QueryString["token"] != token)
         {
             response.StatusCode = 401;
@@ -124,6 +130,10 @@ async Task Json(HttpListenerResponse response, object value)
     response.ContentType = "application/json; charset=utf-8";
     await response.OutputStream.WriteAsync(JsonSerializer.SerializeToUtf8Bytes(value, jsonOptions));
 }
+
+static string AccessHtml() => """
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pad 登录页访问验证</title><style>body{font-family:sans-serif;max-width:520px;margin:80px auto;padding:24px;background:#111827;color:#e5e7eb}input{width:100%;box-sizing:border-box;padding:12px;margin:16px 0}button{padding:10px 20px;background:#60a5fa;border:0;border-radius:8px;font-weight:bold}</style></head><body><h2>AndroidPad 登录页访问验证</h2><p>请输入页面访问令牌。此令牌不是 QQ 密码。</p><form onsubmit="location.href='/?token='+encodeURIComponent(document.querySelector('#accessToken').value.trim());return false"><input id="accessToken" type="password" autocomplete="off" placeholder="访问令牌" autofocus><button type="submit">进入登录页</button></form></body></html>
+""";
 
 static string Html(string token) => """
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

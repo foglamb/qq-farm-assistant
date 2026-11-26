@@ -44,6 +44,8 @@ docker compose up -d --build
 
 页面：`http://HOST:3009/?token=...`
 
+未携带或输错页面令牌时，根路径会显示“AndroidPad 登录页访问验证”表单，不再只返回 JSON `unauthorized`。输入令牌后进入 QQ 登录页；API 仍保持 401 保护。
+
 ## HTTP 接口
 
 除 `/health` 外均需 `x-admin-token: PAD_TOKEN` 或 `?token=...`：
