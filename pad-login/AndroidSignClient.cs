@@ -5,10 +5,10 @@ using Lagrange.Core.Common;
 
 namespace PadLogin;
 
-/// <summary>Android 9.2.20 signing client supporting both Lagrange JSON and Ktor GET APIs.</summary>
+/// <summary>Android signing client supporting both Lagrange JSON and Ktor GET APIs.</summary>
 public sealed class AndroidSignClient(string baseUrl) : AndroidBotSignProvider, IDisposable
 {
-    private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
+    private readonly HttpClient _http = new() { Timeout = TimeSpan.FromMinutes(5) };
     private readonly string _baseUrl = baseUrl.TrimEnd('/');
     private readonly bool _ktorStyle = string.Equals(Environment.GetEnvironmentVariable("PAD_SIGN_STYLE"), "ktor", StringComparison.OrdinalIgnoreCase);
     private readonly HashSet<long> _registered = new();

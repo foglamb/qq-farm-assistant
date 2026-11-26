@@ -15,6 +15,11 @@ services:
       PAD_CURRENT_VERSION: "${PAD_CURRENT_VERSION:-}"
       PAD_SUB_APP_ID: "${PAD_SUB_APP_ID:-}"
       PAD_APP_CLIENT_VERSION: "${PAD_APP_CLIENT_VERSION:-}"
+      PAD_SDK_BUILD_TIME: "${PAD_SDK_BUILD_TIME:-}"
+      PAD_SDK_VERSION: "${PAD_SDK_VERSION:-}"
+      PAD_MISC_BITMAP: "${PAD_MISC_BITMAP:-}"
+      PAD_SUB_SIG_MAP: "${PAD_SUB_SIG_MAP:-}"
+      PAD_MAIN_SIG_MAP: "${PAD_MAIN_SIG_MAP:-}"
       PAD_DATA_DIR: /data
     volumes:
       - pad-login-data:/data

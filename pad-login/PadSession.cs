@@ -134,7 +134,14 @@ public sealed class PadSession : IDisposable
             SsoVersion = source.SsoVersion,
             PackageName = source.PackageName,
             ApkSignatureMd5 = source.ApkSignatureMd5,
-            SdkInfo = source.SdkInfo,
+            SdkInfo = new WtLoginSdkInfo
+            {
+                SdkBuildTime = uint.TryParse(Environment.GetEnvironmentVariable("PAD_SDK_BUILD_TIME"), out var buildTime) ? buildTime : source.SdkInfo.SdkBuildTime,
+                SdkVersion = OptionalEnv("PAD_SDK_VERSION") ?? source.SdkInfo.SdkVersion,
+                MiscBitMap = uint.TryParse(Environment.GetEnvironmentVariable("PAD_MISC_BITMAP"), out var miscBitmap) ? miscBitmap : source.SdkInfo.MiscBitMap,
+                SubSigMap = uint.TryParse(Environment.GetEnvironmentVariable("PAD_SUB_SIG_MAP"), out var subSigMap) ? subSigMap : source.SdkInfo.SubSigMap,
+                MainSigMap = uint.TryParse(Environment.GetEnvironmentVariable("PAD_MAIN_SIG_MAP"), out var mainSigMap) ? (Sig)mainSigMap : source.SdkInfo.MainSigMap,
+            },
             AppId = source.AppId,
             SubAppId = int.TryParse(Environment.GetEnvironmentVariable("PAD_SUB_APP_ID"), out var subAppId) ? subAppId : source.SubAppId,
             AppClientVersion = ushort.TryParse(Environment.GetEnvironmentVariable("PAD_APP_CLIENT_VERSION"), out var clientVersion) ? clientVersion : source.AppClientVersion,
