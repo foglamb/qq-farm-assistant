@@ -9,6 +9,7 @@
 - 本地签名服务 `/sign`、`/energy`、`/get_tlv553` 在服务器上均实测 `code=0`，构建和证据见 `../qsign-service/`。
 - QQ TEA 通过 Lagrange 内置实现的 Span 委托调用，启动自检通过。
 - HTTP 鉴权、健康检查、Pad 到签名服务的容器网络连接通过。
+- `FARM_AUTH_ROUNDTRIP=PASS`：真实 `FarmAuthService.Build/Parse` 已完成 A2 前缀、TEA、Proto 请求字段及响应 Code 的离线回环测试（`PAD_SELF_TEST=1`）。
 - 当前状态为 `needs_password`：等待真实账号首登，尚未声称腾讯在线登录或农场 Code 已成功。
 
 ## AndroidPad 首登

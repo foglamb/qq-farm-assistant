@@ -8,6 +8,11 @@ var token = Environment.GetEnvironmentVariable("PAD_TOKEN");
 if (string.IsNullOrWhiteSpace(token)) throw new InvalidOperationException("PAD_TOKEN is required");
 var port = int.Parse(Environment.GetEnvironmentVariable("PORT") ?? "8080");
 QqTea.SelfTest();
+if (Environment.GetEnvironmentVariable("PAD_SELF_TEST") == "1")
+{
+    await FarmAuthSelfTest.RunAsync();
+    Console.WriteLine("FARM_AUTH_ROUNDTRIP=PASS");
+}
 using var session = new PadSession();
 using var official = new OfficialMiniProgramService();
 using var listener = new HttpListener();

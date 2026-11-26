@@ -42,7 +42,7 @@ public sealed class PadSession : IDisposable
                 signConfigured = SignConfigured,
                 hasQr = _qrImage is not null,
                 verifyUrl = _verifyUrl,
-                hasSavedSession = File.Exists(_keystorePath),
+                hasSavedSession = HasSavedSession(),
             };
         }
     }
@@ -59,7 +59,8 @@ public sealed class PadSession : IDisposable
             lock (_sync) { _phase = "error"; _detail = "未配置 PAD_SIGN_URL；需要 Android 9.2.20 签名服务"; }
             return;
         }
-        if (!File.Exists(_keystorePath) && (uin <= 0 || string.IsNullOrEmpty(password)))
+        var hasSaved = HasSavedSession();
+        if (!hasSaved && (uin <= 0 || string.IsNullOrEmpty(password)))
         {
             lock (_sync) { _phase = "needs_password"; _detail = "Lagrange V2 的 AndroidPad 首次登录需要 QQ 号和密码；成功后仅保存 keystore，之后可免密恢复"; }
             return;
@@ -84,7 +85,8 @@ public sealed class PadSession : IDisposable
                 AutoReLogin = true,
                 CustomServices = [new FarmAuthService()],
             };
-            if (File.Exists(_keystorePath))
+            _context?.Dispose();
+            if (hasSaved && string.IsNullOrEmpty(password))
             {
                 var saved = JsonSerializer.Deserialize<BotKeystore>(await File.ReadAllTextAsync(_keystorePath, _closing.Token))
                     ?? throw new InvalidOperationException("保存的 Pad 登录态无法读取，请删除隔离数据后重试");
@@ -106,6 +108,23 @@ public sealed class PadSession : IDisposable
             lock (_sync) { _phase = "error"; _detail = error.Message; }
         }
         finally { _loginLock.Release(); }
+    }
+
+    private bool HasSavedSession()
+    {
+        try
+        {
+            if (!File.Exists(_keystorePath)) return false;
+            using var document = JsonDocument.Parse(File.ReadAllText(_keystorePath));
+            var a2 = document.RootElement.GetProperty("WLoginSigs").GetProperty("A2");
+            return a2.ValueKind switch
+            {
+                JsonValueKind.String => !string.IsNullOrEmpty(a2.GetString()),
+                JsonValueKind.Array => a2.GetArrayLength() > 0,
+                _ => false,
+            };
+        }
+        catch (Exception error) when (error is IOException or JsonException or KeyNotFoundException or InvalidOperationException) { return false; }
     }
 
     private void RegisterEvents(BotContext context)
@@ -132,6 +151,7 @@ public sealed class PadSession : IDisposable
         });
         context.EventInvoker.RegisterEvent<BotRefreshKeystoreEvent>(async (_, args) =>
         {
+            if (args.Keystore.WLoginSigs.A2.Length == 0) return;
             await File.WriteAllTextAsync(_keystorePath, JsonSerializer.Serialize(args.Keystore), _closing.Token);
             try { File.SetUnixFileMode(_keystorePath, UnixFileMode.UserRead | UnixFileMode.UserWrite); } catch { }
         });
