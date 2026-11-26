@@ -21,6 +21,8 @@ services:
       PAD_MISC_BITMAP: "${PAD_MISC_BITMAP:-}"
       PAD_SUB_SIG_MAP: "${PAD_SUB_SIG_MAP:-}"
       PAD_MAIN_SIG_MAP: "${PAD_MAIN_SIG_MAP:-}"
+      FARM_APPID: "${FARM_APPID:-1112386029}"
+      FARM_AUTH_MODE: "${FARM_AUTH_MODE:-emp}"
       PAD_DATA_DIR: /data
     volumes:
       - pad-login-data:/data

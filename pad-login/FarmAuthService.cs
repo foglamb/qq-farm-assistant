@@ -17,6 +17,7 @@ public sealed class FarmAuthService : BaseService<FarmAuthRequest, FarmAuthRespo
 {
     protected override ValueTask<ReadOnlyMemory<byte>> Build(FarmAuthRequest input, BotContext context)
     {
+        Console.Error.WriteLine("FarmAuth.Build entered");
         var sigs = context.Keystore.WLoginSigs;
         if (sigs.A2.Length == 0 || sigs.A2Key.Length != 16) throw new InvalidOperationException("AndroidPad A2 登录票据尚未就绪");
         var encrypted = QqTea.Encrypt(ProtoSerializer.Serialize(input.Payload), sigs.A2Key);
@@ -24,18 +25,49 @@ public sealed class FarmAuthService : BaseService<FarmAuthRequest, FarmAuthRespo
         BinaryPrimitives.WriteInt32BigEndian(output, sigs.A2.Length);
         sigs.A2.CopyTo(output, 4);
         encrypted.CopyTo(output, 4 + sigs.A2.Length);
+        Console.Error.WriteLine($"FarmAuth.Build exit bytes={output.Length}");
         return ValueTask.FromResult<ReadOnlyMemory<byte>>(output);
     }
 
     protected override ValueTask<FarmAuthResponse> Parse(ReadOnlyMemory<byte> input, BotContext context)
     {
+        try
+        {
+        Console.Error.WriteLine($"FarmAuth.Parse entered bytes={input.Length}");
         var sigs = context.Keystore.WLoginSigs;
-        var span = input.Span;
-        if (span.Length < 8 || sigs.A2Key.Length != 16) throw new InvalidDataException("auth_emp 响应长度不足");
-        var ticketLength = BinaryPrimitives.ReadInt32BigEndian(span);
-        var encrypted = ticketLength >= 0 && 4 + ticketLength < span.Length ? span[(4 + ticketLength)..] : span;
-        var payload = ProtoSerializer.Deserialize<FarmAuthPayloadResponse>(QqTea.Decrypt(encrypted, sigs.A2Key));
-        return ValueTask.FromResult(new FarmAuthResponse(payload.Ret, payload.Msg, payload.Code));
+        var inputBytes = input.ToArray();
+        if (inputBytes.Length < 4 || sigs.A2Key.Length != 16) throw new InvalidDataException("auth_emp 响应长度不足");
+        var ticketLength = BinaryPrimitives.ReadInt32BigEndian(inputBytes.AsSpan());
+        var offsets = new[] { 4 + ticketLength, ticketLength, 4, 0 }.Where(x => x >= 0 && x < inputBytes.Length).Distinct();
+        var errors = new List<string>();
+        foreach (var offset in offsets)
+        {
+            var body = inputBytes.AsSpan(offset);
+            foreach (var encrypted in new[] { true, false })
+            {
+                try
+                {
+                    var bytes = encrypted ? QqTea.Decrypt(body, sigs.A2Key) : body.ToArray();
+                    if (bytes.Length == 0) continue;
+                    var payload = ProtoSerializer.Deserialize<FarmAuthPayloadResponse>(bytes);
+                    if (payload.Ret != 0 || !string.IsNullOrEmpty(payload.Code) || !string.IsNullOrEmpty(payload.Msg) || !string.IsNullOrEmpty(payload.AccessToken))
+                    {
+                        Console.Error.WriteLine($"FarmAuth.Parse matched offset={offset} encrypted={encrypted} ret={payload.Ret} hasCode={!string.IsNullOrEmpty(payload.Code)}");
+                        return ValueTask.FromResult(new FarmAuthResponse(payload.Ret, payload.Msg, payload.Code));
+                    }
+                }
+                catch (Exception error) { errors.Add($"{offset}/{(encrypted ? "tea" : "raw")}:{error.GetType().Name}"); }
+            }
+        }
+        var detail = $"auth_emp响应解析失败 len={inputBytes.Length} ticketLen={ticketLength} attempts={string.Join(',', errors.Take(6))}";
+        Console.Error.WriteLine(detail);
+        return ValueTask.FromResult(new FarmAuthResponse(uint.MaxValue, detail, ""));
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"FarmAuth.Parse outer {error.GetType().Name}: {error.Message}");
+            return ValueTask.FromResult(new FarmAuthResponse(uint.MaxValue, $"auth_emp外层解析异常 {error.GetType().Name}: {error.Message}", ""));
+        }
     }
 }
 
@@ -49,6 +81,34 @@ public sealed class FarmAuthResponse(uint ret, string message, string code) : Pr
     public uint Ret { get; } = ret;
     public string Message { get; } = message;
     public string Code { get; } = code;
+}
+
+public sealed class FarmPlainRequest(FarmAuthPayloadRequest payload) : ProtocolEvent
+{
+    public FarmAuthPayloadRequest Payload { get; } = payload;
+}
+
+[EventSubscribe<FarmPlainRequest>(Protocols.AndroidPad)]
+[Service("QQConnectLogin.auth", RequestType.D2Auth, EncryptType.EncryptD2Key)]
+public sealed class FarmPlainService : BaseService<FarmPlainRequest, FarmAuthResponse>
+{
+    protected override ValueTask<ReadOnlyMemory<byte>> Build(FarmPlainRequest input, BotContext context)
+    {
+        return ValueTask.FromResult<ReadOnlyMemory<byte>>(ProtoSerializer.Serialize(input.Payload));
+    }
+
+    protected override ValueTask<FarmAuthResponse> Parse(ReadOnlyMemory<byte> input, BotContext context)
+    {
+        try
+        {
+            var payload = ProtoSerializer.Deserialize<FarmAuthPayloadResponse>(input.Span);
+            return ValueTask.FromResult(new FarmAuthResponse(payload.Ret, payload.Msg, payload.Code));
+        }
+        catch (Exception error)
+        {
+            return ValueTask.FromResult(new FarmAuthResponse(uint.MaxValue, $"auth响应解析失败 len={input.Length} {error.GetType().Name}: {error.Message}", ""));
+        }
+    }
 }
 
 public sealed class FarmAuthPayloadRequest
@@ -65,7 +125,7 @@ public sealed class FarmAuthPayloadRequest
     [ProtoMember(15)] public long Md5Time { get; set; }
     [ProtoMember(16)] public string Sign { get; set; } = "";
     [ProtoMember(19)] public long Vid { get; set; }
-    [ProtoMember(20)] public int AppType { get; set; } = 1;
+    [ProtoMember(20)] public int AppType { get; set; } = 2;
     [ProtoMember(21)] public int NeedPayToken { get; set; } = 1;
     [ProtoMember(30)] public string AppUniqueIdentifier { get; set; } = "";
     [ProtoMember(31)] public int Referer { get; set; } = 1;
@@ -89,6 +149,7 @@ public sealed class FarmAuthPayloadRequest
             Md5Time = string.IsNullOrEmpty(sign) ? 0 : time,
             Sign = sign,
             AppUniqueIdentifier = package,
+            State = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(),
         };
     }
 }

@@ -13,10 +13,11 @@ internal static class FarmAuthSelfTest
     public static async Task RunAsync()
     {
         var service = new FarmAuthService();
+        var plainService = new FarmPlainService();
         using var context = BotFactory.Create(new BotConfig
         {
             Protocol = Protocols.AndroidPad,
-            CustomServices = [service],
+            CustomServices = [service, plainService],
         });
         context.Keystore.WLoginSigs.A2 = Encoding.ASCII.GetBytes("synthetic-a2");
         context.Keystore.WLoginSigs.A2Key = Convert.FromHexString("00112233445566778899AABBCCDDEEFF");
@@ -38,5 +39,10 @@ internal static class FarmAuthSelfTest
         encrypted.CopyTo(responseBody, 4 + context.Keystore.WLoginSigs.A2.Length);
         var parsed = (FarmAuthResponse)await ((IService)service).Parse(responseBody, context);
         if (parsed.Ret != 0 || parsed.Code != "synthetic-code") throw new InvalidDataException("auth_emp response code mismatch");
+
+        var plainBody = await ((IService)plainService).Build(new FarmPlainRequest(request), context);
+        if (ProtoSerializer.Deserialize<FarmAuthPayloadRequest>(plainBody.Span).AppId != 1112386029) throw new InvalidDataException("auth plain request mismatch");
+        var plainParsed = (FarmAuthResponse)await ((IService)plainService).Parse(ProtoSerializer.Serialize(responsePayload), context);
+        if (plainParsed.Ret != 0 || plainParsed.Code != "synthetic-code") throw new InvalidDataException("auth plain response mismatch");
     }
 }

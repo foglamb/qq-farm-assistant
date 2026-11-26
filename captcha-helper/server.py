@@ -19,7 +19,7 @@ PAGE = """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta na
 <section class="card wide hidden" id="errorBanner"><h2>登录错误详情</h2><div id="errorText" class="notice"></div></section>
 <section class="card"><h2>① QQ 密码首登</h2><div class="field"><label>QQ 号</label><input id="uin" inputmode="numeric" autocomplete="username" placeholder="输入 QQ 号"></div><div class="field"><label>QQ 密码（只用于本次登录，不保存）</label><input id="password" type="password" autocomplete="current-password" placeholder="输入 QQ 密码"></div><div class="actions"><button id="loginBtn" class="btn" onclick="login()">开始 Pad 登录</button><button class="btn secondary" onclick="refresh()">刷新状态</button></div><p class="muted">首次登录需要密码；成功后仅保存 keystore，后续可免密恢复。</p><div id="qr"></div></section>
 <section class="card"><h2>② 腾讯安全验证</h2><div id="noVerify" class="notice">需要验证码时，这里会自动显示验证入口。</div><div id="verifyArea" class="hidden"><p class="muted">验证完成后 ticket/randstr 会自动提交到当前登录会话。</p><div class="actions"><button class="btn" onclick="showCaptcha()">开始腾讯安全验证</button></div><div id="captcha" class="captcha-box"></div><div class="field" style="margin-top:16px"><label>如果收到的是短信码</label><div class="row"><input id="smsCode" inputmode="numeric" placeholder="输入短信验证码" style="flex:1;min-width:180px"><button class="btn secondary" onclick="submitSms()">提交短信码</button></div></div></div><pre id="verifyResult"></pre></section>
-<section class="card wide"><h2>③ 获取农场 Code</h2><div class="actions"><button id="codeBtn" class="btn" onclick="farmCode()">调用 QQConnectLogin.auth_emp</button><button class="btn secondary" onclick="copyCode()">复制 Code</button></div><p class="muted">只有腾讯返回 ret=0 时才表示成功；这里不会生成或显示假 Code。</p><textarea id="codeOutput" readonly placeholder="登录成功后点击上方按钮，真实 ret/message/code 会显示在这里"></textarea></section>
+<section class="card wide"><h2>③ 获取农场 Code</h2><div class="actions"><button id="codeBtn" class="btn" onclick="farmCode()">获取农场 Code（当前协议）</button><button class="btn secondary" onclick="copyCode()">复制 Code</button></div><p class="muted">只有腾讯返回 ret=0 时才表示成功；这里不会生成或显示假 Code。</p><textarea id="codeOutput" readonly placeholder="登录成功后点击上方按钮，真实 ret/message/code 会显示在这里"></textarea></section>
 <section class="card wide"><h2>当前会话详情</h2><pre id="detail">正在读取…</pre></section></main></div><div id="toast" class="toast"></div><script src="https://captcha.gtimg.com/TCaptcha.js"></script><script>
 const token=__TOKEN__;let current=null;let toastTimer;
 const $=s=>document.querySelector(s);const phaseNames={idle:'未开始',needs_password:'等待密码',starting:'正在登录',needs_captcha:'等待安全验证',needs_device_verify:'等待设备验证',verifying:'正在提交验证',online:'已在线',error:'登录错误'};
@@ -42,7 +42,7 @@ def upstream(path, method="GET", body=None, content_type=None):
     if content_type:
         request.add_header("Content-Type", content_type)
     try:
-        with urlopen(request, timeout=45) as response:
+        with urlopen(request, timeout=120) as response:
             return response.status, response.headers.get("Content-Type", "application/octet-stream"), response.read()
     except HTTPError as error:
         return error.code, error.headers.get("Content-Type", "application/json"), error.read()
