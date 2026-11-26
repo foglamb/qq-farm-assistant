@@ -29,7 +29,8 @@ services:
       # 0=按需取码：成功后关闭QQ/NapCat进程，保留登录资料供下次恢复
       - QQ_LOGIN_RESIDENT=${QQ_LOGIN_RESIDENT:-1}
       - QQ_LOGIN_SOCKS_PROXY=${QQ_LOGIN_SOCKS_PROXY:-}
-      # ===== 应用宝 Go 服务（同容器内，单镜像共用 3007 出口）=====
+      # ===== 应用宝 Go 服务（默认关闭；可在设置中开启，重启后保留选择）=====
+      - YYB_ENABLED=${YYB_ENABLED:-0}
       # Node 代理会把 /api/yyb/* 转发到下面的地址；无需在 Web 端再填外部地址
       - YYB_API_URL=http://127.0.0.1:8450
       # 该 token 同时作为：① Go 服务自身的 Bearer 鉴权（YYB_API_TOKEN）② Node 代理转发时携带的 apiKey（YYB_API_KEY）

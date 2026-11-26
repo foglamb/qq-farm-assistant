@@ -78,6 +78,11 @@ test('native Code TTL accepts only absolute timestamps and preserves seconds or 
   const session = { getNodeMiscService: () => ({ loginWithAppId: async () => ({ errCode: 0, result: code, expiresAt: 1800000000 }) }) };
   assert.deepEqual(await requestFarmCode(session), { code, expiresAt: 1800000000000 });
 });
+test('native host identity window covers the QR lifetime instead of failing after five seconds', async () => {
+  const fs = require('node:fs');
+  const host = fs.readFileSync(require('node:path').join(__dirname, '../qq-login/host.mjs'), 'utf8');
+  assert.match(host, /waitForIdentity\(self,\{timeoutMs:180000\}\)/);
+});
 test('native authorization is attempted once and honors timeout and cancellation', async () => {
   const { requestFarmCode } = await adapter;
   const calls = [];

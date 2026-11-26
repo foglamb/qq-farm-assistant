@@ -62,7 +62,9 @@ globalThis.__qqFarmLogin = {
     session=value;
     const startedAt=Date.now();
     try {
-      confirmedUin=await waitForIdentity(self);
+      // QR login can legitimately take the full QR lifetime. The session's uin
+      // is populated by the native login event; five seconds was a startup race.
+      confirmedUin=await waitForIdentity(self,{timeoutMs:180000});
       if (shuttingDown || current==='offline') return;
       emit('diagnostic',{event:'identity_ready',...describeIdentity(self),elapsedMs:Date.now()-startedAt});
       emit('session',{uin:confirmedUin});

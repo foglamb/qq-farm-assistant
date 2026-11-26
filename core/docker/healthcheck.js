@@ -1,5 +1,7 @@
-// Probe both services. No authentication secrets are printed or passed in argv.
+// Probe the panel always and YYB only when explicitly enabled.
+// No authentication secrets are printed or passed in argv.
 const http = require('node:http');
+const { readYybEnabled } = require('../src/services/yyb-runtime');
 
 function probe(port, path, json = false) {
   return new Promise((resolve, reject) => {
@@ -21,7 +23,6 @@ function probe(port, path, json = false) {
   });
 }
 
-Promise.all([
-  probe(Number(process.env.ADMIN_PORT) || 3007, '/'),
-  probe(Number(process.env.YYB_PORT) || 8450, '/health', true),
-]).catch(() => { process.exitCode = 1; });
+const probes = [probe(Number(process.env.ADMIN_PORT) || 3007, '/')];
+if (readYybEnabled()) probes.push(probe(Number(process.env.YYB_PORT) || 8450, '/health', true));
+Promise.all(probes).catch(() => { process.exitCode = 1; });
