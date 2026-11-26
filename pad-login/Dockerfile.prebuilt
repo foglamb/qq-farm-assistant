@@ -1,0 +1,10 @@
+# Offline fallback for servers that cannot reach mcr.microsoft.com.
+# The application is published locally with: dotnet publish -r linux-x64 --self-contained true -p:PublishSingleFile=true
+FROM ghcr.io/foglamb/qq-farm-assistant@sha256:fb8ed99ca6be2d2761d32a1091cdb7c62c16363fa6c45c945b0a3a5993c9c926
+WORKDIR /app
+COPY PadLogin /app/PadLogin
+ENV PORT=8080 PAD_DATA_DIR=/data DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+VOLUME ["/data"]
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD node -e "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+ENTRYPOINT ["/app/PadLogin"]

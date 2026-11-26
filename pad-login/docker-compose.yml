@@ -1,0 +1,15 @@
+services:
+  pad-login:
+    build: .
+    container_name: qq-farm-pad-login
+    restart: unless-stopped
+    ports:
+      - "3009:8080"
+    environment:
+      PAD_TOKEN: "${PAD_TOKEN:?Set PAD_TOKEN}"
+      PAD_SIGN_URL: "${PAD_SIGN_URL:-}"
+      PAD_DATA_DIR: /data
+    volumes:
+      - pad-login-data:/data
+volumes:
+  pad-login-data:
