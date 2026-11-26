@@ -50,7 +50,7 @@ docker compose up -d --build
 
 除 `/health` 外均需 `x-admin-token: PAD_TOKEN` 或 `?token=...`：
 
-- `GET /api/status`：Pad 状态，不返回密码或签名地址。
+- `GET /api/status`：Pad 状态，不返回密码或签名地址；`errors` 仅保留最近 20 条 Warning/Error/Critical 日志，用于定位腾讯登录失败。
 - `POST /api/login`：`{uin,password}` 启动 Pad 登录。
 - `POST /api/farm-code`：调用 `QQConnectLogin.auth_emp`，返回真实 `ret/message/code`。
 - `GET /qr.png`：兼容 QR 流程二维码（如产生）。

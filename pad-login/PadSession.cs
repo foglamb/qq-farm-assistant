@@ -19,6 +19,7 @@ public sealed class PadSession : IDisposable
     private string _phase = "idle";
     private string _detail = "尚未开始 Pad 登录";
     private string? _loginError;
+    private readonly List<string> _errors = new();
     private string? _verifyUrl;
 
     public PadSession()
@@ -44,6 +45,7 @@ public sealed class PadSession : IDisposable
                 hasQr = _qrImage is not null,
                 verifyUrl = _verifyUrl,
                 hasSavedSession = HasSavedSession(),
+                errors = _errors.ToArray(),
             };
         }
     }
@@ -77,6 +79,7 @@ public sealed class PadSession : IDisposable
                 _qrImage = null;
                 _verifyUrl = null;
                 _loginError = null;
+                _errors.Clear();
             }
             var sign = new AndroidSignClient(Environment.GetEnvironmentVariable("PAD_SIGN_URL")!);
             var config = new BotConfig
@@ -131,6 +134,18 @@ public sealed class PadSession : IDisposable
 
     private void RegisterEvents(BotContext context)
     {
+        context.EventInvoker.RegisterEvent<BotLogEvent>((_, args) =>
+        {
+            if (args.Level < LogLevel.Warning) return Task.CompletedTask;
+            var message = args.Message.Length > 800 ? args.Message[..800] : args.Message;
+            lock (_sync)
+            {
+                _errors.Add($"{args.Level} {args.Tag}: {message}");
+                if (_errors.Count > 20) _errors.RemoveAt(0);
+                if (args.Level >= LogLevel.Error) _loginError = $"{args.Tag}: {message}";
+            }
+            return Task.CompletedTask;
+        });
         context.EventInvoker.RegisterEvent<BotQrCodeEvent>((_, args) =>
         {
             lock (_sync)
