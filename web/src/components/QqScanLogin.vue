@@ -445,7 +445,7 @@ onBeforeUnmount(() => {
       </BaseButton>
     </div>
     <div class="text-right text-xs opacity-50" :style="{ color: 'var(--theme-text)' }">
-      作者：nkooe
+      二改作者：foglamb
     </div>
   </div>
 </template>

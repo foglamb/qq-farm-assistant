@@ -1,6 +1,7 @@
 # QQ 按需续登定制方案
 
-基线：`nkooe/qq-farm-assistant@897aa101f8d082459d7c977ba469cc8b62e61518`  
+二改作者：foglamb
+基础版本：`qq-farm-assistant@897aa101f8d082459d7c977ba469cc8b62e61518`
 定制分支：`feature/ondemand-qq`
 
 ## 结论
@@ -74,7 +75,7 @@ sh scripts/test-ondemand.sh
 上游已经配置：
 
 ```text
-upstream = https://github.com/nkooe/qq-farm-assistant.git
+upstream = https://github.com/foglamb/qq-farm-assistant.git
 branch   = main
 ```
 

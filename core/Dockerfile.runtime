@@ -7,6 +7,7 @@ WORKDIR /app/core
 ENV PAD_LOGIN_EXECUTABLE=/app/pad-login/PadLogin
 
 COPY core /app/core
+RUN rm -rf /app/web/dist
 COPY web/dist /app/web/dist
 COPY scripts /app/scripts
 COPY pad-login/PadLogin /app/pad-login/PadLogin
