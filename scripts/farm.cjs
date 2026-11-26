@@ -160,14 +160,8 @@ async function serve() {
       if (!/^\d+$/.test(number)) throw new Error('Invalid Xvfb display');
       env.DISPLAY = ':' + number;
     }
-    if (await healthy(env.YYB_PORT, 'yyb')) {
-      const auth = await request(env.YYB_PORT, '/accounts', env.YYB_API_TOKEN);
-      if (auth.status !== 200) throw new Error('YYB port is owned by another service or uses a different token.');
-      console.log('[INFO] Reusing the authenticated YYB service; it will not be stopped by this launcher.');
-    } else {
-      const yyb = startChild(env.YYB_EXECUTABLE, ['-host', '127.0.0.1', '-port', env.YYB_PORT, '-resource-root', env.YYB_RESOURCE_ROOT], { cwd: path.dirname(env.YYB_RESOURCE_ROOT) });
-      await waitFor(env.YYB_PORT, 'yyb', yyb);
-    }
+    // YYB is opt-in. The panel owns its optional process through yyb-runtime;
+    // the supervisor never starts it by default.
     if (stopping) return;
     if (await healthy(env.ADMIN_PORT, 'bot')) throw new Error('The panel is already running outside this launcher. Stop that instance first.');
     const bot = startChild(process.execPath, [path.join(root, 'core', 'client.js')], { cwd: path.join(root, 'core') });
@@ -175,7 +169,7 @@ async function serve() {
     if (stopping) return;
     ready = true;
     console.log('[OK] Panel: http://localhost:' + env.ADMIN_PORT);
-    console.log('[OK] QQ and YYB are managed automatically.');
+    console.log('[OK] QQ is managed automatically; YYB is disabled until enabled in Settings.');
   } catch (error) {
     console.error('[ERROR] ' + error.message);
     process.exitCode = 1;
