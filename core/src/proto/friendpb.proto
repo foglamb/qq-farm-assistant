@@ -51,7 +51,9 @@ message GameFriend {
 // ============ 请求/回复 ============
 
 // --- 获取所有好友 ---
-message GetAllRequest {}
+message GetAllRequest {
+    int32 global_scene_id = 1;
+}
 
 message GetAllReply {
     repeated GameFriend game_friends = 1;
@@ -62,12 +64,14 @@ message GetAllReply {
 // --- 获取指定游戏好友 (通过GID列表) ---
 message GetGameFriendsRequest {
     repeated int64 gids = 1;
+    int32 global_scene_id = 2;
 }
 
 // --- 同步好友 (带 open_ids) ---
 message SyncAllRequest {
     // field 1 reserved
     repeated string open_ids = 2;
+    int32 global_scene_id = 3;
 }
 
 message SyncAllReply {
