@@ -1,5 +1,5 @@
 const { getItemById, getItemImageById, getShopGoodsById } = require('../config/gameConfig');
-const { getServerTimeSec, toNum } = require('../utils/utils');
+const { getServerTimeSec, toNum, logWarn } = require('../utils/utils');
 const mallService = require('../../services/mall');
 let purchaseTail = Promise.resolve();
 function businessError(code, message) {
@@ -125,6 +125,15 @@ function mallGoodsDto(goods, balances, slotType) {
     };
 }
 async function getMallCatalog(slotTypeInput = 1) {
+    try {
+        return await readMallCatalog(slotTypeInput);
+    }
+    catch (error) {
+        logWarn('商城', `农场商城目录读取失败: ${error.message}`, { module: 'mall', event: 'catalog', result: 'error' });
+        throw error;
+    }
+}
+async function readMallCatalog(slotTypeInput = 1) {
     const slotType = Number(slotTypeInput);
     if (![1, 4, 5].includes(slotType))
         throw businessError('INVALID_MALL_SLOT', '不支持的商城分页');
@@ -134,7 +143,8 @@ async function getMallCatalog(slotTypeInput = 1) {
         const status = await vip.getQQVipRewardsStatus();
         membership = { isSvip: status.is_qq_vip === true, remainingDays: toNum(status.remaining_days) };
     }
-    const reply = await mallService.getMallListBySlotType(slotType, true);
+    // Use the complete farm catalog response; ranch manual-open flags do not apply here.
+    const reply = await mallService.getMallListBySlotType(slotType, false);
     const goods = Array.isArray(reply?.goods_list) ? reply.goods_list : [];
     const currencyIds = goods.map((entry) => Math.max(0, toNum(entry?.price?.id))).filter(Boolean);
     const balances = await currencyBalances(currencyIds);

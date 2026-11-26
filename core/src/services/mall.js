@@ -413,6 +413,7 @@ module.exports = {
   checkAndBuyFertilizerByThreshold,
   checkAndBuyFertilizerBoth,
   buyFreeGifts,
+  getMallListBySlotType,
   getMallGoodsList,
   purchaseMallGoods,
   parseMallPriceValue,

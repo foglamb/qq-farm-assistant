@@ -17,7 +17,13 @@ async function getRanchFriendList(checkpoint) {
         throw error('RANCH_SCENE_REQUIRED', '同步好友需要先进入牧场场景');
     const self = toNum(state.gid);
     const socket = getWs();
-    const gids = CONFIG.platform === 'qq' ? getKnownFriendGids().filter((gid) => gid !== self) : [];
+    const qq = CONFIG.platform === 'qq';
+    let gids = qq ? getKnownFriendGids().filter((gid) => gid !== self) : [];
+    // Ranch automation can run before the farm friend list initializes on first login.
+    if (qq && gids.length === 0) {
+        await gid_manager_1.syncKnownFriendGidsFromRecentVisitorsOnce();
+        gids = getKnownFriendGids().filter((gid) => gid !== self);
+    }
     const key = `${process.env.FARM_ACCOUNT_ID}:${CONFIG.platform}:${self}:${gids.join(',')}`;
     if (cache && cache.socket === socket && cache.key === key && Date.now() < cache.expiresAt)
         return cache.friends;
@@ -30,7 +36,7 @@ async function getRanchFriendList(checkpoint) {
         const batch = gids.slice(current.offset, current.offset + gid_manager_1.QQ_FRIEND_LIST_BATCH_SIZE);
         const rows = batch.length
             ? await (0, gid_manager_1.fetchFriendsByGids)(batch, 2)
-            : (0, gid_manager_1.extractReplyFriends)(await (0, gid_manager_1.fetchAllFriendsForScene)(2));
+            : qq ? [] : (0, gid_manager_1.extractReplyFriends)(await (0, gid_manager_1.fetchAllFriendsForScene)(2));
         if (getWs() !== socket || getUserState().globalSceneId !== 2) {
             throw error('RANCH_FRIEND_SESSION_CHANGED', '牧场好友同步期间连接或场景已变化');
         }

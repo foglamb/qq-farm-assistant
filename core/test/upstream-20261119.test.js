@@ -198,6 +198,23 @@ test('ranch roster queries scene 2, preserves nickname and keeps farm-only NPCs 
   await assert.rejects(service.getRanchFriendList(), { code: 'RANCH_SCENE_REQUIRED' });
   assert.equal(all.length, 0);
 });
+test('ranch roster seeds QQ GIDs from visitors before querying and never falls back to invalid GetAll', async () => {
+  let known = []; let synced = 0; const batches = []; const socket = {};
+  const service = load('../src/modern/services/ranch/friend-roster.js', {
+    '../../config/config': { CONFIG: { platform: 'qq' } },
+    '../../models/store': { getKnownFriendGids: () => known },
+    '../../utils/network': { getWs: () => socket, getUserState: () => ({ gid: 2, globalSceneId: 2 }) },
+    '../../utils/utils': { toNum: Number, randomDelay: async () => {} },
+    '../friend/gid-manager': {
+      QQ_FRIEND_LIST_BATCH_SIZE: 35,
+      syncKnownFriendGidsFromRecentVisitorsOnce: async () => { synced++; known = [3]; },
+      fetchFriendsByGids: async (gids, scene) => { batches.push([scene, ...gids]); return [{ gid: 3, name: '牧场好友', big_farm_status: {} }]; },
+      fetchAllFriendsForScene: async () => { throw new Error('GetAll must not be called for QQ'); },
+    },
+  });
+  assert.deepEqual(Array.from(await service.getRanchFriendList(), friend => friend.gid), [3]);
+  assert.equal(synced, 1); assert.deepEqual(batches, [[2, 3]]);
+});
 test('ranch roster resumes after yielding but discards the session after reconnect', async () => {
   let socket = {}; let reads = 0; let yielded = false;
   const service = load('../src/modern/services/ranch/friend-roster.js', {

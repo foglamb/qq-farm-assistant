@@ -11,11 +11,11 @@ function harness() {
   const goods = { id: 41, item_id: 20040, item_count: 3, price: 25, unlocked: true, limit_count: 5, bought_num: 0 };
   const product = { goods_id: 71, name: '测试礼包', price: { id: 1002, count: 2 }, is_available: true,
     reward_items: [{ id: 20040, count: 2 }], purchase_limit: { limit_type: 2, limit_count: 4, bought_count: 1 } };
-  const bag = [{ id: 1005, count: 1000 }, { id: 1002, count: 100 }]; const writes = []; const reads = [];
+  const bag = [{ id: 1005, count: 1000 }, { id: 1002, count: 100 }]; const writes = []; const reads = []; const mallReads = [];
   let corrupt = false; let failed = false;
   const mocks = {
     '../config/gameConfig': { getItemById: id => ({ name: `物品${id}` }), getItemImageById: () => '', getShopGoodsById: id => id === 41 ? { shop_id: 4, item_id: 20040, price_id: 1005 } : undefined },
-    '../utils/utils': { getServerTimeSec: () => 1000, toNum: value => Number(value) || 0 },
+    '../utils/utils': { getServerTimeSec: () => 1000, toNum: value => Number(value) || 0, logWarn() {} },
     './warehouse': { getBag: async () => { if (failed) throw new Error('offline'); return { items: bag }; },
       getBagItems: reply => reply.items, isItemLocked: item => !!item.locked },
     './farm': {
@@ -27,13 +27,13 @@ function harness() {
       },
     },
     '../../services/mall': {
-      getMallListBySlotType: async () => ({ goods_list: [structuredClone(product)] }),
+      getMallListBySlotType: async (slot, manual) => { mallReads.push({ slot, manual }); return { goods_list: [structuredClone(product)] }; },
       purchaseMallGoods: async (id, count) => { writes.push({ id, count }); product.purchase_limit.bought_count += count;
         return { goods_id: id, reward_items: product.reward_items, purchase_limit: product.purchase_limit }; },
     },
   };
   compileFunction(fs.readFileSync(file, 'utf8'), ['require', 'module', 'exports'])(name => mocks[name] || realRequire(name), module, module.exports);
-  return { api: module.exports, goods, product, bag, writes, reads, corrupt: () => { corrupt = true; }, failed: () => { failed = true; } };
+  return { api: module.exports, goods, product, bag, writes, reads, mallReads, corrupt: () => { corrupt = true; }, failed: () => { failed = true; } };
 }
 const offer = goods => ({ price: { id: goods.price.id, count: goods.price.count }, rewards: goods.rewards });
 
@@ -78,6 +78,7 @@ test('an unconfirmed props response is not retried', async () => {
 
 test('catalog preserves official weekly cap and rejects stale gift contents', async () => {
   const h = harness(); const goods = (await h.api.getMallCatalog(1)).goods[0];
+  assert.deepEqual(h.mallReads, [{ slot: 1, manual: false }], 'farm catalog must use the complete exported mall response');
   assert.equal(goods.limit.type, 2);
   assert.equal(goods.limit.max, 4);
   assert.equal(goods.limit.remaining, 3);

@@ -4,4 +4,5 @@ module.exports = {
   extractReplyFriends: api.extractReplyFriends,
   fetchFriendsByGids: api.fetchFriendsByGids,
   fetchAllFriendsForScene: api.fetchAllFriendsForScene,
+  syncKnownFriendGidsFromRecentVisitorsOnce: api.syncKnownFriendGidsFromRecentVisitorsOnce,
 };

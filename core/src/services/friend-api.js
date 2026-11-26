@@ -804,6 +804,7 @@ module.exports = {
   dedupeFriendsByGid,
   buildFriendReply,
   syncKnownFriendGidsFromFriends,
+  syncKnownFriendGidsFromRecentVisitorsOnce,
   getEffectiveKnownQqFriendGids,
   isEnterFarmBannedError,
   parseRpcErrorCode,

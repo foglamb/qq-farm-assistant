@@ -43,6 +43,7 @@ async function harness(options = {}) {
 
 test('mall reads typed price, availability and period purchase limit from the current protocol', async () => {
   const h = await harness({ goods: { purchase_limit: { limit_type: 4, bought_count: 2, limit_count: 7 } } });
+  assert.equal(typeof h.api.getMallListBySlotType, 'function');
   const [goods] = await h.api.getMallGoodsList(1);
   assert.equal(h.api.parseMallPriceValue(goods.price), 42);
   assert.deepEqual(JSON.parse(JSON.stringify(h.api.parseMallLimitInfo(goods.purchase_limit))), { limitCount: 7, boughtNum: 2 });
