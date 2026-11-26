@@ -2,6 +2,7 @@
 import DeviceProtocolCard from '@/components/settings/DeviceProtocolCard.vue'
 import OfflineReminderCard from '@/components/settings/OfflineReminderCard.vue'
 import PasswordChangeCard from '@/components/settings/PasswordChangeCard.vue'
+import YybRuntimeCard from '@/components/settings/YybRuntimeCard.vue'
 
 interface SelectOption<T = string | number> {
   label: string
@@ -89,6 +90,8 @@ const offlineConfig = defineModel<OfflineReminderConfig>('offlineConfig', { requ
         @random-imei="emit('randomImei')"
         @save="emit('saveDeviceProtocol')"
       />
+
+      <YybRuntimeCard />
 
       <PasswordChangeCard
         v-model:form="passwordForm"
