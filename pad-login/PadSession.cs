@@ -18,6 +18,7 @@ public sealed class PadSession : IDisposable
     private byte[]? _qrImage;
     private string _phase = "idle";
     private string _detail = "尚未开始 Pad 登录";
+    private string? _loginError;
     private string? _verifyUrl;
 
     public PadSession()
@@ -75,6 +76,7 @@ public sealed class PadSession : IDisposable
                 _detail = "正在初始化 AndroidPad 登录";
                 _qrImage = null;
                 _verifyUrl = null;
+                _loginError = null;
             }
             var sign = new AndroidSignClient(Environment.GetEnvironmentVariable("PAD_SIGN_URL")!);
             var config = new BotConfig
@@ -100,7 +102,7 @@ public sealed class PadSession : IDisposable
             lock (_sync)
             {
                 _phase = success ? "online" : "error";
-                _detail = success ? "AndroidPad 登录成功，可同时观察 Windows QQ 在线状态" : "AndroidPad 登录未完成";
+                _detail = success ? "AndroidPad 登录成功，可同时观察 Windows QQ 在线状态" : _loginError ?? "AndroidPad 登录未完成，请重新登录";
             }
         }
         catch (Exception error) when (error is not OperationCanceledException)
@@ -149,6 +151,14 @@ public sealed class PadSession : IDisposable
             }
             return Task.CompletedTask;
         });
+        context.EventInvoker.RegisterEvent<BotLoginEvent>((_, args) =>
+        {
+            if (!args.Success)
+            {
+                lock (_sync) { _loginError = $"腾讯登录失败：state={args.State}，{args.Error?.Tag ?? "登录"}：{args.Error?.Message ?? "未知错误"}"; }
+            }
+            return Task.CompletedTask;
+        });
         context.EventInvoker.RegisterEvent<BotRefreshKeystoreEvent>(async (_, args) =>
         {
             if (args.Keystore.WLoginSigs.A2.Length == 0) return;
@@ -167,18 +177,30 @@ public sealed class PadSession : IDisposable
         });
     }
 
-    public void SubmitCaptcha(string ticket, string randstr)
+    public bool SubmitCaptcha(string ticket, string randstr)
     {
         var context = _context ?? throw new InvalidOperationException("登录会话不存在，请重新登录");
-        lock (_sync) { _phase = "verifying"; _detail = "验证码已提交，正在等待腾讯登录结果"; _verifyUrl = null; }
-        context.SubmitCaptcha(ticket, randstr);
+        var accepted = context.SubmitCaptcha(ticket, randstr);
+        lock (_sync)
+        {
+            _phase = accepted ? "verifying" : "error";
+            _detail = accepted ? "验证码已提交，正在等待腾讯登录结果" : "验证码会话已结束，请重新输入密码登录";
+            if (accepted) _verifyUrl = null;
+        }
+        return accepted;
     }
 
-    public void SubmitSms(string code)
+    public bool SubmitSms(string code)
     {
         var context = _context ?? throw new InvalidOperationException("登录会话不存在，请重新登录");
-        lock (_sync) { _phase = "verifying"; _detail = "短信码已提交，正在等待腾讯登录结果"; _verifyUrl = null; }
-        context.SubmitSMSCode(code);
+        var accepted = context.SubmitSMSCode(code);
+        lock (_sync)
+        {
+            _phase = accepted ? "verifying" : "error";
+            _detail = accepted ? "短信码已提交，正在等待腾讯登录结果" : "短信验证会话已结束，请重新输入密码登录";
+            if (accepted) _verifyUrl = null;
+        }
+        return accepted;
     }
 
     public async Task<FarmAuthResponse> GetFarmCodeAsync()

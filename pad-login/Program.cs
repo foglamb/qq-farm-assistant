@@ -97,13 +97,13 @@ async Task Handle(HttpListenerContext context)
                 break;
             case ("/captcha", "POST"):
                 var captcha = await Body(request);
-                session.SubmitCaptcha(captcha["ticket"]?.GetValue<string>() ?? "", captcha["randstr"]?.GetValue<string>() ?? "");
-                await Json(response, new { ok = true });
+                var captchaAccepted = session.SubmitCaptcha(captcha["ticket"]?.GetValue<string>() ?? "", captcha["randstr"]?.GetValue<string>() ?? "");
+                await Json(response, new { ok = captchaAccepted, error = captchaAccepted ? null : "验证码会话已结束，请重新登录" });
                 break;
             case ("/sms", "POST"):
                 var sms = await Body(request);
-                session.SubmitSms(sms["code"]?.GetValue<string>() ?? "");
-                await Json(response, new { ok = true });
+                var smsAccepted = session.SubmitSms(sms["code"]?.GetValue<string>() ?? "");
+                await Json(response, new { ok = smsAccepted, error = smsAccepted ? null : "短信验证会话已结束，请重新登录" });
                 break;
             default:
                 response.StatusCode = 404;
