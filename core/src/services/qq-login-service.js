@@ -134,6 +134,7 @@ class QqLoginService {
         : launch.electron ? ['--no-sandbox'] : [launch.host, launch.runtime, directory];
       const environment = options.nativeProxyURL !== undefined ? { ...this.environment, QQ_LOGIN_SOCKS_PROXY: options.nativeProxyURL } : this.environment;
       const env = helperEnvironment(directory, launch, environment);
+      if (launch.protocol === 'pad') env.PAD_DEVICE_PROFILE = this.environment.PAD_DEVICE_PROFILE || path.join(this.dataDir, 'pad-device.json');
       if (options.restoreUin) env.FARM_QQ_RESTORE_UIN = String(options.restoreUin);
       else delete env.FARM_QQ_RESTORE_UIN;
       item.child = this.spawn(launch.executable, args, { cwd: directory, env,

@@ -31,7 +31,7 @@ function harness(t) {
       children.push(child); launches.push({ file, args, config }); return child;
     } });
   t.after(() => { service.close(); for (const child of children) child.kill(); fs.rmSync(dataDir, { recursive: true, force: true }); });
-  return { service, children, launches };
+  return { service, children, launches, dataDir };
 }
 
 test('Pad QR requests are rejected with the correct password/NapCat guidance', t => {
@@ -40,11 +40,12 @@ test('Pad QR requests are rejected with the correct password/NapCat guidance', t
 });
 
 test('Pad password is pipe-only and real captcha/SMS commands stay in their owning session', t => {
-  const { service, children } = harness(t);
+  const { service, children, launches, dataDir } = harness(t);
   const state = service.create('1001:token-a', { protocol: 'pad', uin: '12345678', password: 'private-password' });
   const item = service.owned('1001:token-a', state.sessionId);
   assert.equal(item.password, undefined);
   assert.deepEqual(children[0].commands[0], { command: 'start', mode: 'password', uin: '12345678', password: 'private-password' });
+  assert.equal(launches[0].config.env.PAD_DEVICE_PROFILE, path.join(dataDir, 'pad-device.json'));
   assert.equal('password' in service.get('1001:token-a', state.sessionId), false);
   children[0].event('state', { phase: 'needs_captcha', message: '需要验证', verifyUrl: 'https://turing.captcha.qcloud.com/?aid=1', phone: '86-138****0000' });
   const pending = service.get('1001:token-a', state.sessionId);

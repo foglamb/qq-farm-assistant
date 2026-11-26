@@ -11,6 +11,7 @@ public sealed partial class PadSession : IDisposable
 {
     private readonly string _dataDir;
     private readonly string _keystorePath;
+    private readonly string _deviceProfilePath;
     private readonly SemaphoreSlim _loginLock = new(1, 1);
     private readonly CancellationTokenSource _closing = new();
     private readonly object _sync = new();
@@ -31,6 +32,7 @@ public sealed partial class PadSession : IDisposable
             : Path.Combine(Path.GetFullPath(sessionDirectory), "qq-data");
         Directory.CreateDirectory(_dataDir);
         _keystorePath = Path.Combine(_dataDir, "keystore.json");
+        _deviceProfilePath = Environment.GetEnvironmentVariable("PAD_DEVICE_PROFILE") ?? Path.Combine(_dataDir, "device.json");
         _appInfo = CreateAppInfo();
     }
 
@@ -123,10 +125,12 @@ public sealed partial class PadSession : IDisposable
                 ? BotFactory.Create(config, appInfo: _appInfo)
                 : BotFactory.Create(config, saved, _appInfo);
             RegisterEvents(_context);
+            if (saved is null) ApplySharedDeviceProfile(_context.Keystore);
             await PersistKeystore(_context.Keystore);
             var success = uin > 0 && !string.IsNullOrEmpty(password)
                 ? await _context.Login(uin, password, _closing.Token)
                 : await _context.Login(_closing.Token);
+            if (success) SaveSharedDeviceProfile(_context.Keystore);
             lock (_sync)
             {
                 _phase = success ? "online" : "error";
@@ -211,6 +215,39 @@ public sealed partial class PadSession : IDisposable
         try { File.SetUnixFileMode(_keystorePath, UnixFileMode.UserRead | UnixFileMode.UserWrite); } catch { }
     }
 
+    private void ApplySharedDeviceProfile(BotKeystore keystore)
+    {
+        try
+        {
+            if (!File.Exists(_deviceProfilePath)) return;
+            var profile = JsonSerializer.Deserialize<PadDeviceProfile>(File.ReadAllText(_deviceProfilePath));
+            if (profile?.Guid is not { Length: 16 }) return;
+            keystore.Guid = profile.Guid.ToArray();
+            keystore.AndroidId = profile.AndroidId ?? keystore.AndroidId;
+            keystore.Qimei = profile.Qimei ?? keystore.Qimei;
+            keystore.DeviceName = profile.DeviceName ?? keystore.DeviceName;
+        }
+        catch (Exception error) when (error is IOException or JsonException or UnauthorizedAccessException) { }
+    }
+
+    private void SaveSharedDeviceProfile(BotKeystore keystore)
+    {
+        if (keystore.Guid is not { Length: 16 } || File.Exists(_deviceProfilePath)) return;
+        var directory = Path.GetDirectoryName(_deviceProfilePath);
+        if (string.IsNullOrEmpty(directory)) return;
+        Directory.CreateDirectory(directory);
+        var temporary = _deviceProfilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            var profile = new PadDeviceProfile(keystore.Guid.ToArray(), keystore.AndroidId, keystore.Qimei, keystore.DeviceName);
+            File.WriteAllText(temporary, JsonSerializer.Serialize(profile));
+            try { File.SetUnixFileMode(temporary, UnixFileMode.UserRead | UnixFileMode.UserWrite); } catch { }
+            File.Move(temporary, _deviceProfilePath);
+        }
+        catch (IOException) { }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+    }
+
     private void RegisterEvents(BotContext context)
     {
         context.EventInvoker.RegisterEvent<BotLogEvent>((_, args) =>
@@ -266,6 +303,17 @@ public sealed partial class PadSession : IDisposable
         context.EventInvoker.RegisterEvent<BotCaptchaEvent>((_, args) =>
         {
             lock (_sync) { _verifyUrl = args.CaptchaUrl; _phase = "needs_captcha"; _detail = "需要腾讯验证码/短信验证，请打开下方链接并提交结果"; }
+            return Task.CompletedTask;
+        });
+        context.EventInvoker.RegisterEvent<BotSMSEvent>((_, args) =>
+        {
+            lock (_sync)
+            {
+                _phone = args.Phone;
+                _verifyUrl = args.Url;
+                _phase = "needs_sms";
+                _detail = "腾讯已请求手机短信验证，请输入收到的短信验证码";
+            }
             return Task.CompletedTask;
         });
     }

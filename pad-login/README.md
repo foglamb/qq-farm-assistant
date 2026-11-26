@@ -14,7 +14,9 @@
 
 ## AndroidPad 登录路径与验证边界
 
-AndroidPad 在本交付中使用账号密码登录；密码只随本次请求进入内存，不写入 keystore 或状态接口。腾讯要求时通过真实 Captcha/SMS 续登，成功后使用 keystore 免密恢复。keystore 本身属于敏感登录凭据，应保护数据卷。失败时也会保留 Guid/AndroidId 等设备字段；只有 A2 非空才计为可恢复会话。
+AndroidPad 在本交付中使用账号密码登录；密码只随本次请求进入内存，不写入 keystore 或状态接口。腾讯要求时通过真实 Captcha/SMS 续登，原生 `BotSMSEvent` 提供手机号和 `needs_sms` 状态；成功后使用 keystore 免密恢复。keystore 本身属于敏感登录凭据，应保护数据卷。失败时也会保留 Guid/AndroidId 等设备字段；只有 A2 非空才计为可恢复会话。
+
+多账号可通过 `PAD_DEVICE_PROFILE` 复用纯设备身份，降低新设备 237 风控。该文件只序列化 `PadDeviceProfile`（Guid/AndroidId/Qimei/DeviceName），不包含账号、密码或 WLoginSigs。首个成功登录才会写入共享设备文件。
 
 实验性 Watch/Pad QR 已在三轮真实手机验证中被腾讯风险校验拦截，因此不作为交付功能；多账号扫码由原 NapCat 链承担。
 

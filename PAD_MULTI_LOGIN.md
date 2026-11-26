@@ -12,7 +12,8 @@
 - “QQ Pad / NapCat 登录”弹窗显示当前用户已添加的农场账号数量。
 - NapCat 可连续扫码多个账号，每个会话拥有独立目录、身份校验和 Code。
 - 每个账号记录 `qqLoginProtocol`，后续按需取码仍使用原协议，旧账号行为不变。
-- Pad 密码登录遇到腾讯风控时，可打开真实 TencentCaptcha 滑块并提交 ticket/randstr，也可提交短信码。
+- Pad 密码登录遇到腾讯风控时，可打开真实 TencentCaptcha 滑块并提交 ticket/randstr；原生 `BotSMSEvent` 会显示验证手机并打开短信码输入框。
+- 多账号默认复用 `PAD_DEVICE_PROFILE` 中的纯设备身份，减少新设备 237 风控；文件只含 Guid/AndroidId/Qimei/DeviceName，不含 Uin、密码或任何 WLoginSigs 票据。
 - 已有 Pad 会话的账号可留空密码，通过 `restore:true` 恢复；新 Pad 账号必须输入 QQ 号和密码。
 - 验证提交后等待腾讯返回最终状态，不把“已提交”显示成“已登录”。
 - 当前 Pad 使用直连；NapCat 保留原代理配置。
@@ -42,6 +43,8 @@ PAD_SIGN_URL=http://HOST:8081
 ```
 
 9.3.65 版本字段使用 `PAD_PT_VERSION`、`PAD_QUA`、`PAD_CURRENT_VERSION`、`PAD_SUB_APP_ID`、`PAD_APP_CLIENT_VERSION`、`PAD_SDK_BUILD_TIME`、`PAD_SDK_VERSION`、`PAD_MISC_BITMAP`、`PAD_SUB_SIG_MAP`、`PAD_MAIN_SIG_MAP` 配置；留空时使用 Lagrange 默认值。
+
+Node 默认把共享设备文件放在 `core/data/qq-login/pad-device.json`，可用 `PAD_DEVICE_PROFILE` 改写路径。首个成功登录的账号会登记设备；已有会话仍优先使用自己的 keystore。
 
 公共签名会接触 QQ 号、设备标识和签名请求数据，不发送明文 QQ 密码。选择公共签名前应明确接受该数据边界。
 
