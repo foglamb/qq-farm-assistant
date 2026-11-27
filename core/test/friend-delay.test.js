@@ -61,6 +61,16 @@ for (const change of ['disable', 'blacklist', 'stop']) test(`steal delay recheck
   assert.equal(h.isCheckingFriendsRunning(), false);
 });
 
+test('empty friend results share a five-minute cache and do not spam every task tick', async () => {
+  const h = harness(undefined, ({ mocks, events }) => {
+    mocks['./friend-api'].getAllFriends = async () => { events.push('read'); return { friends: [] }; };
+    mocks['../utils/utils'].log = (_tag, msg) => { if (String(msg).includes('没有好友')) events.push('empty-log'); };
+  });
+  await h.checkFriends({ onlySteal: true });
+  await h.checkFriends({ onlySteal: true });
+  assert.deepEqual(h.events, ['read', 'empty-log']);
+});
+
 test('startup bad patrol defines and rechecks its connection guard', async () => {
   const h = harness(undefined, ({ mocks, events }) => {
     mocks['../models/store'].getFriendBlacklist = () => [];

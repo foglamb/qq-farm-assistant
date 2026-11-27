@@ -185,11 +185,18 @@ function ensureExpLimitCallback() {
 // turbo 巡查 6 秒一轮，每轮 getAllFriends 分批拉取（35 人/批）在好友多时很耗时。
 // turbo 目标是"进全部护主犬、忽略快照"，护主犬集合来自磁盘缓存，列表缓存对判定几乎无副作用。
 const TURBO_FRIENDS_LIST_TTL_MS = 30 * 1000;
+const EMPTY_FRIENDS_LIST_TTL_MS = 5 * 60 * 1000;
 let turboFriendsListCache = null;
 let turboFriendsListCacheAt = 0;
+let emptyFriendsListCache = null;
+let emptyFriendsListCacheAt = 0;
+let lastEmptyFriendsLogAt = 0;
 
 async function getCachedFriendsList(forceRefresh = false) {
   const turboMode = !!isAutomationOn('friend_turbo_mode');
+  if (!forceRefresh && emptyFriendsListCache && Date.now() - emptyFriendsListCacheAt < EMPTY_FRIENDS_LIST_TTL_MS) {
+    return emptyFriendsListCache;
+  }
   if (
     turboMode && !forceRefresh &&
     turboFriendsListCache &&
@@ -198,6 +205,13 @@ async function getCachedFriendsList(forceRefresh = false) {
     return turboFriendsListCache;
   }
   const reply = await getAllFriends();
+  if (extractReplyFriends(reply).length === 0) {
+    emptyFriendsListCache = reply;
+    emptyFriendsListCacheAt = Date.now();
+  } else {
+    emptyFriendsListCache = null;
+    emptyFriendsListCacheAt = 0;
+  }
   if (turboMode) {
     turboFriendsListCache = reply;
     turboFriendsListCacheAt = Date.now();
@@ -209,6 +223,10 @@ async function getCachedFriendsList(forceRefresh = false) {
 
 function clearFriendsListCache() {
   setFriendsListCache(null);
+  emptyFriendsListCache = null;
+  emptyFriendsListCacheAt = 0;
+  turboFriendsListCache = null;
+  turboFriendsListCacheAt = 0;
 }
 
 async function bootstrapFriendDogInfoCacheIfNeeded() {
@@ -390,13 +408,18 @@ async function checkFriends(options = {}) {
     const rawFriends = extractReplyFriends(allFriendsReply);
 
     if (rawFriends.length === 0) {
-      log('好友', '没有好友', {
-        module: 'friend',
-        event: '好友扫描',
-        result: 'empty',
-      });
+      const now = Date.now();
+      if (now - lastEmptyFriendsLogAt >= EMPTY_FRIENDS_LIST_TTL_MS) {
+        log('好友', '没有好友，5 分钟后重试自动扫描；可使用刷新好友列表立即重试', {
+          module: 'friend',
+          event: '好友扫描',
+          result: 'empty',
+        });
+        lastEmptyFriendsLogAt = now;
+      }
       return false;
     }
+    lastEmptyFriendsLogAt = 0;
 
     const blacklist = new Map(getFriendBlacklistDetails(accountId).map((w) => [w.gid, w]));
     const dogInfoCache = readFriendDogInfoCache(accountId);
