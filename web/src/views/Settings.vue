@@ -6,6 +6,7 @@ import ConfirmModal from '@/components/ConfirmModal.vue'
 import AccountSettingsTab from '@/components/settings/AccountSettingsTab.vue'
 import DefaultPlanSettingsTab from '@/components/settings/DefaultPlanSettingsTab.vue'
 import ProxySettingsTab from '@/components/settings/ProxySettingsTab.vue'
+import QqSignSettingsCard from '@/components/settings/QqSignSettingsCard.vue'
 import UserSettingsTab from '@/components/settings/UserSettingsTab.vue'
 import ScrollTabs from '@/components/ui/ScrollTabs.vue'
 import { useAccountSettings } from '@/composables/settings/useAccountSettings'
@@ -19,11 +20,11 @@ const settingStore = useSettingStore()
 const userStore = useUserStore()
 const router = useRouter()
 
-type SettingsTabKey = 'account' | 'proxy' | 'default-plan' | 'user'
+type SettingsTabKey = 'account' | 'sign' | 'proxy' | 'default-plan' | 'user'
 
 function getInitialSettingsTab(): SettingsTabKey {
   const saved = localStorage.getItem(`settings-active-tab:${userStore.userId}`)
-  return saved === 'proxy' || saved === 'default-plan' || saved === 'user'
+  return saved === 'sign' || saved === 'proxy' || saved === 'default-plan' || saved === 'user'
     ? saved
     : 'account'
 }
@@ -36,6 +37,7 @@ watch(activeTab, (newTab) => {
 
 const tabs = [
   { key: 'account', label: '账号管理', icon: 'i-carbon-user-settings' },
+  { key: 'sign', label: '签名服务', icon: 'i-carbon-certificate' },
   { key: 'proxy', label: '代理设置', icon: 'i-carbon-network-3' },
   { key: 'default-plan', label: '默认方案', icon: 'i-carbon-settings-adjust' },
   { key: 'user', label: '用户管理', icon: 'i-carbon-user' },
@@ -276,6 +278,8 @@ onMounted(async () => {
           :accounts="accounts"
           @notify="showAlert"
         />
+
+        <QqSignSettingsCard v-else-if="activeTab === 'sign'" />
 
         <UserSettingsTab
           v-else-if="activeTab === 'user'"

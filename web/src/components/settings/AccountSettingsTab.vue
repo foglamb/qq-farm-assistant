@@ -60,6 +60,17 @@ function accountAvatar(acc: any) {
   return ''
 }
 
+function loggedInQq(acc: any) {
+  // Prefer the QQ number actually saved by the last successful login.
+  const candidates = [acc?.loggedInUin, acc?.qqLoginUin, acc?.uin, acc?.qq]
+  for (const value of candidates) {
+    const text = String(value ?? '').trim()
+    if (/^\d{5,20}$/.test(text))
+      return text
+  }
+  return ''
+}
+
 function refreshProgressPercent(job: RefreshWxCodesJob | null) {
   if (!job || job.total <= 0)
     return 0
@@ -292,7 +303,7 @@ function refreshStateLabel(job: RefreshWxCodesJob | null, loading: boolean, warn
                   {{ getPlatformLabel(acc.platform) }}
                 </span>
                 <span class="truncate text-xs text-gray-500 sm:text-sm">
-                  {{ acc.uin || '未绑定' }}
+                  {{ loggedInQq(acc) || '未绑定' }}
                 </span>
               </div>
             </div>

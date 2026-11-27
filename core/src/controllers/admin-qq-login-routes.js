@@ -47,6 +47,61 @@ function registerAdminQqLoginRoutes({ app, requireAdminToken, qqLogin, provider,
   }));
   app.get('/api/qq-login/sessions/:id', requireAdminToken, run((req, res) => res.json({ ok: true, data: qqLogin.get(owner(req), req.params.id) })));
   app.delete('/api/qq-login/sessions/:id', requireAdminToken, run((req, res) => { qqLogin.cancel(owner(req), req.params.id); res.json({ ok: true }); }));
+  // Signing service settings: admins may point AndroidPad at a self-hosted
+  // signer (for example a local 9.3.75 unidbg instance) without a rebuild.
+  app.get('/api/qq-login/sign', requireAdminToken, run((req, res) => {
+    const store = require('../models/store');
+    res.json({ ok: true, data: store.getQqLoginSign(),
+      effective: {
+        signUrl: process.env.PAD_SIGN_URL || '', xwidUrl: process.env.PAD_LOCAL_XWID_URL || '',
+        ptVersion: process.env.PAD_PT_VERSION || '', qua: process.env.PAD_QUA || '',
+      } });
+  }));
+  app.post('/api/qq-login/sign', requireAdminToken, run((req, res) => {
+    if (req.currentUser.role !== 'admin') throw new QqScanError('仅管理员可以修改签名服务', 403, 'configuration');
+    const store = require('../models/store');
+    let saved;
+    try { saved = store.setQqLoginSign(req.body || {}); }
+    catch (error) { throw new QqScanError(error.message, 400, 'configuration'); }
+    res.json({ ok: true, data: saved });
+  }));
+  // Read-only reachability probe; it never logs in and never echoes secrets.
+  app.post('/api/qq-login/sign/test', requireAdminToken, run(async (req, res) => {
+    const raw = String(req.body?.signUrl || '').trim();
+    if (!/^https?:\/\//i.test(raw)) throw new QqScanError('签名服务地址必须以 http:// 或 https:// 开头', 400, 'configuration');
+    let protocol = null;
+    try {
+      const response = await fetch(raw.replace(/\/+$/, '') + '/', { signal: AbortSignal.timeout(8000) });
+      if (!response.ok) throw new QqScanError(`签名服务返回 HTTP ${response.status}`, 503, 'configuration');
+      const body = await response.json().catch(() => null);
+      const info = body?.data?.protocol || null;
+      protocol = info
+        ? { version: String(info.version || ''), qua: String(info.qua || '') }
+        // A signer pool answers with its own shape; report the pool as healthy.
+        : body?.data?.backends ? { version: `签名池 ${body.data.backends.length} 个后端`, qua: '' } : null;
+    } catch (error) {
+      if (error instanceof QqScanError) throw error;
+      throw new QqScanError('签名服务无法连接，请检查地址与网络', 503, 'configuration');
+    }
+    res.json({ ok: true, data: { ok: true, version: protocol?.version || '', qua: protocol?.qua || '' } });
+  }));
+  // Logged-in QQ numbers, read from saved identity records only.
+  app.get('/api/qq-login/identities', requireAdminToken, run((req, res) => {
+    const accounts = provider.getAccounts().accounts.filter(account => req.currentUser.role === 'admin' || account.userId === req.currentUser.id);
+    const data = accounts.map(account => {
+      let uin = '';
+      if (account.qqLoginProtocol === 'pad' && account.qqLoginProfile) {
+        try {
+          const profile = require('node:path').join(require('../config/runtime-paths').getDataDir(), 'qq-login', 'profiles', String(account.qqLoginProfile));
+          const identity = JSON.parse(require('node:fs').readFileSync(require('node:path').join(profile, 'identity.json'), 'utf8'));
+          if (identity && /^\d{5,20}$/.test(String(identity.uin || ''))) uin = String(identity.uin);
+        } catch { /* no saved identity */ }
+      }
+      return { accountId: String(account.id), name: account.name, protocol: account.qqLoginProtocol || '',
+        uin: uin || String(account.uin || account.qq || ''), source: uin ? 'session' : 'account' };
+    });
+    res.json({ ok: true, data });
+  }));
 }
 
 module.exports = { registerAdminQqLoginRoutes };

@@ -32,6 +32,20 @@ function helperEnvironment(sessionDir, launch, environment = process.env) {
     if (key.startsWith('NAPCAT_') || ['NODE_OPTIONS', 'NODE_PATH', 'ELECTRON_RUN_AS_NODE'].includes(key)) delete env[key];
   }
   Object.assign(env, { FARM_QQ_RUNTIME: launch.runtime, FARM_QQ_SESSION_DIR: sessionDir, FARM_QQ_HOST: launch.host });
+  // Admin-editable signing service overrides the deployment defaults so a
+  // self-hosted signer (for example 9.3.75) can be selected without a rebuild.
+  if (launch.protocol === 'pad') {
+    let sign = null;
+    try { sign = require('../models/store').getQqLoginSign(); } catch { /* keep deployment defaults */ }
+    const mappings = sign && [
+      ['PAD_SIGN_URL', sign.signUrl], ['PAD_LOCAL_XWID_URL', sign.xwidUrl], ['PAD_SIGN_STYLE', sign.signStyle],
+      ['PAD_PT_VERSION', sign.ptVersion], ['PAD_QUA', sign.qua], ['PAD_CURRENT_VERSION', sign.currentVersion],
+      ['PAD_SUB_APP_ID', sign.subAppId], ['PAD_APP_CLIENT_VERSION', sign.appClientVersion],
+      ['PAD_SDK_BUILD_TIME', sign.sdkBuildTime], ['PAD_SDK_VERSION', sign.sdkVersion],
+      ['PAD_MISC_BITMAP', sign.miscBitmap], ['PAD_SUB_SIG_MAP', sign.subSigMap], ['PAD_MAIN_SIG_MAP', sign.mainSigMap],
+    ];
+    for (const [key, value] of mappings || []) if (value) env[key] = value;
+  }
   const proxy = environment.QQ_LOGIN_SOCKS_PROXY || '';
   if (proxy) {
     let url;

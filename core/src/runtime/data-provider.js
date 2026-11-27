@@ -5,6 +5,19 @@ const {
 const { getSchedulerRegistrySnapshot } = require('../services/scheduler');
 const { loginIdentity } = require('../services/login-recovery');
 
+/** QQ number confirmed by the newest saved login session, if any. */
+function savedLoginUin(account) {
+    if (!account || account.qqLoginProtocol !== 'pad' || !account.qqLoginProfile) return '';
+    try {
+        const fs = require('node:fs');
+        const path = require('node:path');
+        const directory = path.join(require('../config/runtime-paths').getDataDir(), 'qq-login', 'profiles', String(account.qqLoginProfile));
+        const identity = JSON.parse(fs.readFileSync(path.join(directory, 'identity.json'), 'utf8'));
+        const uin = String(identity?.uin ?? '').trim();
+        return /^\d{5,20}$/.test(uin) ? uin : '';
+    } catch { return ''; }
+}
+
 /**
  * 创建数据提供器 —— 封装对 Worker 的 API 调用，供 Admin Server 使用
  */
@@ -396,6 +409,8 @@ function createDataProvider(deps) {
                 acc.runtimeReconnect = runtime?.reconnect || null;
                 acc.runtimeLogin = runtime?.login || null;
                 acc.runtimeQqSession = runtime?.qqSession || null;
+                // QQ number confirmed by the last successful native/Pad login.
+                acc.loggedInUin = savedLoginUin(acc) || '';
                 if (worker && worker.status && worker.status.status && worker.status.status.name) {
                     acc.nick = worker.status.status.name;
                 }

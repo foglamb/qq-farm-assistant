@@ -517,7 +517,8 @@ const globalConfig = {
     announcementReadRecords: {},
     systemConfig: null,
     loginLinks: null,
-    userDeviceProtocols: {}
+    userDeviceProtocols: {},
+    qqLoginSign: null
 };
 
 function normalizeAccountConfig(raw, defaults = accountDefaults) {
@@ -835,6 +836,11 @@ function loadGlobalConfig() {
                 purchaseUrl: String(data.loginLinks.purchaseUrl ?? '').trim(),
                 qqGroupUrl: String(data.loginLinks.qqGroupUrl ?? '').trim()
             };
+        }
+
+        // QQ 登录签名服务（可在后台自定义，支持自有本地签名）
+        if (data.qqLoginSign && typeof data.qqLoginSign === 'object') {
+            globalConfig.qqLoginSign = normalizeQqLoginSign(data.qqLoginSign);
         }
 
         // 用户设备协议
@@ -1755,10 +1761,80 @@ function setUserWxConfig(config, userId) {
     return getUserWxConfig(userId);
 }
 
+// ==================== QQ 登录签名服务 ====================
+
+const DEFAULT_QQ_LOGIN_SIGN = {
+    signUrl: '',
+    xwidUrl: '',
+    signStyle: 'remix',
+    ptVersion: '',
+    qua: '',
+    currentVersion: '',
+    subAppId: '',
+    appClientVersion: '',
+    sdkBuildTime: '',
+    sdkVersion: '',
+    miscBitmap: '',
+    subSigMap: '',
+    mainSigMap: ''
+};
+
+// 9.3.75 is the only supported AndroidPad protocol version. These values match
+// the local unidbg signer (QUA versionCode 16580) and are the deployment default.
+const QQ_LOGIN_SIGN_9375 = {
+    signStyle: 'remix',
+    ptVersion: '9.3.75',
+    qua: 'V1_AND_SQ_9.3.75_16580_YYB_D',
+    currentVersion: '9.3.75.16580',
+    subAppId: '537393150',
+    appClientVersion: '0',
+    sdkBuildTime: '1784552169',
+    sdkVersion: '6.0.0.2591',
+    miscBitmap: '150470524',
+    subSigMap: '66560',
+    mainSigMap: '16724722'
+};
+
+function normalizeQqLoginSign(value) {
+    const source = value && typeof value === 'object' ? value : {};
+    const text = (input, fallback = '') => {
+        const raw = String(input ?? '').trim();
+        if (!raw) return fallback;
+        return raw.slice(0, 2048);
+    };
+    const signUrl = text(source.signUrl);
+    if (signUrl && !/^https?:\/\//i.test(signUrl)) {
+        const error = new Error('签名服务地址必须以 http:// 或 https:// 开头');
+        error.code = 'INVALID_SIGN_URL';
+        throw error;
+    }
+    const xwidUrl = text(source.xwidUrl);
+    if (xwidUrl && !/^https?:\/\//i.test(xwidUrl)) {
+        const error = new Error('XWID 签名地址必须以 http:// 或 https:// 开头');
+        error.code = 'INVALID_XWID_URL';
+        throw error;
+    }
+    const next = { ...DEFAULT_QQ_LOGIN_SIGN, ...QQ_LOGIN_SIGN_9375 };
+    for (const key of Object.keys(DEFAULT_QQ_LOGIN_SIGN)) {
+        if (key === 'signUrl') next.signUrl = signUrl.replace(/\/+$/, '');
+        else if (key === 'xwidUrl') next.xwidUrl = xwidUrl.replace(/\/+$/, '');
+        else next[key] = text(source[key], next[key]);
+    }
+    return next;
+}
+
+function getQqLoginSign() {
+    return normalizeQqLoginSign(globalConfig.qqLoginSign || DEFAULT_QQ_LOGIN_SIGN);
+}
+function setQqLoginSign(value) {
+    const next = normalizeQqLoginSign(value);
+    saveGlobalConfig({ qqLoginSign: next });
+    return getQqLoginSign();
+}
+
 // ==================== 设备协议 ====================
 
-const DEFAULT_DEVICE_PROTOCOL = {
-    enabled: false,
+const DEFAULT_DEVICE_PROTOCOL = {    enabled: false,
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13)',
     deviceModel: 'iPhone 15 Pro Max',
     deviceBrand: 'Apple',
@@ -1875,6 +1951,8 @@ module.exports = {
     getUserDeviceProtocol,
     setUserDeviceProtocol,
     deleteUserDeviceProtocol,
+    getQqLoginSign,
+    setQqLoginSign,
     readFriendDogInfoCache,
     writeFriendDogInfoCache,
     readFriendListCache,

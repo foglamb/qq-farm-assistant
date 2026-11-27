@@ -35,8 +35,17 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/yyb-go .
 # 复制运行时需要的 resource 目录（avatars/qr/templates）
 RUN mkdir -p /out/resource && cp -r /src/resource/. /out/resource/
 
-# AndroidPad 由 scripts/build-pad-login.sh 预先发布为 pad-login/PadLogin，
-# 避免部署服务器必须访问 .NET SDK 镜像仓库。
+# ===== AndroidPad 协议编译阶段 =====
+# Pad 协议与农场核心同属一个项目：这里直接由 .NET SDK 编译，
+# 不再依赖预先构建的 pad-login/PadLogin 二进制。
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS pad-builder
+
+WORKDIR /src/pad-login
+COPY pad-login/ ./
+RUN dotnet publish -c Release -o /out -r linux-x64 \
+    -p:PublishSingleFile=true -p:SelfContained=true \
+    -p:IncludeNativeLibrariesForSelfExtract=true \
+    -p:EnableCompressionInSingleFile=true
 
 # ===== 固定版本的 QQ/NapCat 文件源（不包含任何账号资料）=====
 # QQ + NapCat 4.18.42；由 GitHub Actions 校验归档后推入用户 GHCR。
@@ -73,7 +82,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # 直接拷贝 builder 全量（含 node_modules），避免 pnpm symlink / 多阶段覆盖坑
 COPY --from=builder /app /app
-COPY pad-login/PadLogin /app/pad-login/PadLogin
+COPY --from=pad-builder /out/PadLogin /app/pad-login/PadLogin
 RUN chmod 755 /app/pad-login/PadLogin
 
 # 仅复制程序文件；NapCat ZIP 在安装时再次校验 SHA-256。

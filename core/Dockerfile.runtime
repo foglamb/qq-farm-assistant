@@ -1,6 +1,38 @@
-# 网络受限服务器的增量构建：先准备 web/dist 与 pad-login/PadLogin。
-# 基础镜像只含程序运行时，不包含任何账号数据；容器仍挂载原有数据卷。
+# 一体化运行时镜像：农场核心 + Web 前端 + AndroidPad 协议，全部由本文件构建。
+# 前置条件只有一个——把仓库放进构建上下文；不需要预先编译任何二进制。
+#
+#   docker build -f core/Dockerfile.runtime -t qq-farm-four-channels:latest .
+#
+# 阶段 1  前端（Vue + Vite）
+# 阶段 2  AndroidPad 协议（.NET 8，自带 Lagrange.Core，自包含单文件）
+# 阶段 3  运行时（在官方运行镜像上叠加产物，不含任何账号数据）
 ARG BASE_IMAGE=ghcr.io/foglamb/qq-farm-assistant:ondemand
+
+FROM node:22-bookworm-slim AS web
+WORKDIR /src/web
+RUN corepack enable
+# 国内镜像源，避免 registry.npmjs.org 的 TLS 中断
+ENV npm_config_registry=https://registry.npmmirror.com
+COPY web/package.json web/pnpm-lock.yaml ./
+# 锁文件与 package.json 版本区间有偏差，允许按 manifest 解析；
+# pnpm 10 默认拦截依赖构建脚本（esbuild/@parcel-watcher），构建镜像内放行。
+RUN pnpm install --no-frozen-lockfile \
+    --config.strict-dep-builds=false \
+    --config.dangerously-allow-all-builds=true
+# 更新日志弹窗以 ?raw 引用仓库根目录该文件（web/src 向上四级）
+COPY UPDATE_README.md /src/UPDATE_README.md
+COPY web/ ./
+RUN pnpm run build
+
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS pad
+WORKDIR /src/pad-login
+COPY pad-login/ ./
+# 不跳过 restore：single-file 需要的 ILLink/运行时包只在带 RID 的完整还原里拉取。
+RUN dotnet publish -c Release -o /out -r linux-x64 \
+    -p:PublishSingleFile=true -p:SelfContained=true \
+    -p:IncludeNativeLibrariesForSelfExtract=true \
+    -p:EnableCompressionInSingleFile=true
+
 FROM ${BASE_IMAGE}
 
 WORKDIR /app/core
@@ -8,9 +40,9 @@ ENV PAD_LOGIN_EXECUTABLE=/app/pad-login/PadLogin
 
 COPY core /app/core
 RUN rm -rf /app/web/dist
-COPY web/dist /app/web/dist
+COPY --from=web /src/web/dist /app/web/dist
 COPY scripts /app/scripts
-COPY pad-login/PadLogin /app/pad-login/PadLogin
+COPY --from=pad /out/PadLogin /app/pad-login/PadLogin
 RUN node /app/core/qq-login/patch-napcat.cjs /opt/qq-login/napcat/napcat.mjs /opt/qq-login/napcat/napcat.mjs.next \
     && mv /opt/qq-login/napcat/napcat.mjs.next /opt/qq-login/napcat/napcat.mjs \
     && node --check /opt/qq-login/napcat/napcat.mjs \
