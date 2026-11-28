@@ -1,25 +1,11 @@
-# 一体化镜像：农场核心 + Web 前端 + AndroidPad 协议，全部在本文件内构建。
-# CI 在 GitHub Actions 上执行本文件并推送 GHCR，服务器只需 docker pull。
+# 服务器本地增量构建：以已发布的运行镜像为底，只替换程序文件。
+# Web 前端用预构建的 web/dist，AndroidPad 协议仍在本文件内自动编译。
 #
-# 本地等价命令：
+#   bash build.sh
 #   docker build -f core/Dockerfile.runtime -t qq-farm-four-channels:latest .
-ARG BASE_IMAGE=ghcr.io/foglamb/qq-farm-assistant-runtime:4.18.42
-
-# ---------- Web 前端 ----------
-FROM node:22-bookworm-slim AS web
-WORKDIR /src/web
-RUN corepack enable
-ENV npm_config_registry=https://registry.npmmirror.com
-COPY web/package.json web/pnpm-lock.yaml ./
-# 锁文件与 package.json 版本区间有偏差，允许按 manifest 解析；
-# pnpm 10 默认拦截依赖构建脚本（esbuild/@parcel-watcher），CI 内放行。
-RUN pnpm install --no-frozen-lockfile \
-    --config.strict-dep-builds=false \
-    --config.dangerously-allow-all-builds=true
-# 更新日志弹窗以 ?raw 引用仓库根目录该文件（web/src 向上四级）
-COPY UPDATE_README.md /src/UPDATE_README.md
-COPY web/ ./
-RUN pnpm run build
+#
+# 完整从零构建（CI 使用）：core/Dockerfile
+ARG BASE_IMAGE=ghcr.io/foglamb/qq-farm-assistant:ondemand
 
 # ---------- AndroidPad 协议 ----------
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS pad
@@ -39,7 +25,7 @@ ENV PAD_LOGIN_EXECUTABLE=/app/pad-login/PadLogin
 
 COPY core /app/core
 RUN rm -rf /app/web/dist
-COPY --from=web /src/web/dist /app/web/dist
+COPY web/dist /app/web/dist
 COPY scripts /app/scripts
 COPY --from=pad /out/PadLogin /app/pad-login/PadLogin
 RUN node /app/core/qq-login/patch-napcat.cjs /opt/qq-login/napcat/napcat.mjs /opt/qq-login/napcat/napcat.mjs.next \
