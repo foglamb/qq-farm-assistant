@@ -83,7 +83,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 直接拷贝 builder 全量（含 node_modules），避免 pnpm symlink / 多阶段覆盖坑
 COPY --from=builder /app /app
 COPY --from=pad-builder /out/PadLogin /app/pad-login/PadLogin
-RUN chmod 755 /app/pad-login/PadLogin
+# Watch is the third scan channel: pure-Python, no signing service required.
+COPY vendor/watch-login /app/watch-login
+ENV WATCH_LOGIN_COMPONENT_DIR=/app/watch-login \
+    WATCH_LOGIN_PYTHON=python3
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/* \
+    && chmod 755 /app/pad-login/PadLogin \
+    && python3 -c "import sys; sys.path.insert(0, '/app/watch-login'); import pyqqv.wire" 
 
 # 仅复制程序文件；NapCat ZIP 在安装时再次校验 SHA-256。
 COPY --from=qq-runtime /opt/QQ /opt/QQ

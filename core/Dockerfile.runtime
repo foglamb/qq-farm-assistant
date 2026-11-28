@@ -28,6 +28,14 @@ RUN rm -rf /app/web/dist
 COPY web/dist /app/web/dist
 COPY scripts /app/scripts
 COPY --from=pad /out/PadLogin /app/pad-login/PadLogin
+# Watch is the third scan channel: pure-Python, no signing service required.
+# The base runtime image ships node only, so python3 comes from Debian.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/*
+COPY vendor/watch-login /app/watch-login
+ENV WATCH_LOGIN_COMPONENT_DIR=/app/watch-login \
+    WATCH_LOGIN_PYTHON=python3
 RUN node /app/core/qq-login/patch-napcat.cjs /opt/qq-login/napcat/napcat.mjs /opt/qq-login/napcat/napcat.mjs.next \
     && mv /opt/qq-login/napcat/napcat.mjs.next /opt/qq-login/napcat/napcat.mjs \
     && node --check /opt/qq-login/napcat/napcat.mjs \

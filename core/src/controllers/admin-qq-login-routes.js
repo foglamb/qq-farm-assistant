@@ -97,7 +97,8 @@ function registerAdminQqLoginRoutes({ app, requireAdminToken, qqLogin, provider,
     const accounts = provider.getAccounts().accounts.filter(account => req.currentUser.role === 'admin' || account.userId === req.currentUser.id);
     const data = accounts.map(account => {
       let uin = '';
-      if (account.qqLoginProtocol === 'pad' && account.qqLoginProfile) {
+      // Both AndroidPad and Watch keep a saved identity.json in their profile.
+      if (['pad', 'watch'].includes(account.qqLoginProtocol) && account.qqLoginProfile) {
         try {
           const profile = require('node:path').join(require('../config/runtime-paths').getDataDir(), 'qq-login', 'profiles', String(account.qqLoginProfile));
           const identity = JSON.parse(require('node:fs').readFileSync(require('node:path').join(profile, 'identity.json'), 'utf8'));

@@ -7,7 +7,7 @@ const { loginIdentity } = require('../services/login-recovery');
 
 /** QQ number confirmed by the newest saved login session, if any. */
 function savedLoginUin(account) {
-    if (!account || account.qqLoginProtocol !== 'pad' || !account.qqLoginProfile) return '';
+    if (!account || !['pad', 'watch'].includes(account.qqLoginProtocol) || !account.qqLoginProfile) return '';
     try {
         const fs = require('node:fs');
         const path = require('node:path');

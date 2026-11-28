@@ -5,6 +5,7 @@ const { spawn } = require('node:child_process');
 const { getDataDir, getProgramRoot } = require('../config/runtime-paths');
 const { credentialMetadata } = require('./code-lifecycle');
 const { padLaunch } = require('./pad-login-launch');
+const { watchLaunch } = require('./watch-login-launch');
 
 const PREFIX = Buffer.from('QQFARM_LOGIN:');
 const MAX_LINE = 3 * 1024 * 1024;
@@ -75,6 +76,7 @@ class QqLoginService {
     this.spawn = options.spawn || spawn;
     this.getLaunch = options.getLaunch || (() => nativeLaunch(this.environment));
     this.getPadLaunch = options.getPadLaunch || (() => padLaunch(this.environment));
+    this.getWatchLaunch = options.getWatchLaunch || (() => watchLaunch(this.environment));
     this.defaultProtocol = options.defaultProtocol || this.environment.QQ_LOGIN_PROTOCOL || 'napcat';
     this.dataDir = options.dataDir || path.join(getDataDir(), 'qq-login');
     this.maxSessions = Number(options.maxSessions ?? this.environment.QQ_LOGIN_MAX_SESSIONS ?? 3);
@@ -108,8 +110,9 @@ class QqLoginService {
   resolveLaunch(options = {}) {
     const protocol = options.protocol || options.qqLoginProtocol || this.defaultProtocol;
     if (protocol === 'pad') return this.getPadLaunch();
+    if (protocol === 'watch') return this.getWatchLaunch();
     if (protocol === 'napcat') return { protocol: 'napcat', ...this.getLaunch() };
-    throw new QqScanError('QQ 登录协议无效，请选择 AndroidPad 或 NapCat', 400, 'configuration');
+    throw new QqScanError('QQ 登录协议无效，请选择 AndroidPad、NapCat 或手表协议', 400, 'configuration');
   }
 
   status({ owner, admin = false } = {}) {
@@ -145,7 +148,9 @@ class QqLoginService {
       if (options.userId) fs.writeFileSync(path.join(directory, 'owner.json'), JSON.stringify({ userId: options.userId, targetUserId: options.targetUserId ?? null }), { mode: 0o600 });
       const args = launch.protocol === 'pad'
         ? [...launch.argsPrefix, '--json-lines', directory]
-        : launch.electron ? ['--no-sandbox'] : [launch.host, launch.runtime, directory];
+        : launch.protocol === 'watch'
+          ? [launch.host, directory]
+          : launch.electron ? ['--no-sandbox'] : [launch.host, launch.runtime, directory];
       const environment = options.nativeProxyURL !== undefined ? { ...this.environment, QQ_LOGIN_SOCKS_PROXY: options.nativeProxyURL } : this.environment;
       const env = helperEnvironment(directory, launch, environment);
       if (launch.protocol === 'pad') env.PAD_DEVICE_PROFILE = this.environment.PAD_DEVICE_PROFILE || path.join(this.dataDir, 'pad-device.json');
@@ -177,6 +182,9 @@ class QqLoginService {
       if (launch.protocol === 'pad') {
         const mode = options.restoreUin ? 'restore' : startPassword ? 'password' : 'qr';
         item.child.stdin.write(`${JSON.stringify({ command: 'start', mode, uin: String(options.restoreUin || options.uin || ''), ...(startPassword ? { password: startPassword } : {}) })}\n`);
+      } else if (launch.protocol === 'watch') {
+        // 手表协议只有扫码一种方式：进程启动即申请二维码。
+        item.child.stdin.write(`${JSON.stringify({ command: 'start', mode: 'qr' })}\n`);
       }
       item.child.on('error', () => this.fail(item, 'QQ 扫码组件无法启动，请检查部署文件'));
       const exited = () => {

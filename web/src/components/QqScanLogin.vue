@@ -6,10 +6,12 @@ import api from '@/api'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 
-const props = defineProps<{ account?: Account, initialProtocol?: 'pad' | 'napcat' }>()
+const props = defineProps<{ account?: Account, initialProtocol?: 'pad' | 'napcat' | 'watch' }>()
 const accountStore = useAccountStore()
-const protocol = ref<'pad' | 'napcat'>(props.account?.qqLoginProtocol || props.initialProtocol || 'napcat')
+const protocol = ref<'pad' | 'napcat' | 'watch'>(props.account?.qqLoginProtocol || props.initialProtocol || 'napcat')
 const loginMode = ref<'qr' | 'password'>((props.account?.qqLoginProtocol || props.initialProtocol) === 'pad' ? 'password' : 'qr')
+const PROTOCOL_LABELS: Record<string, string> = { pad: 'AndroidPad', napcat: 'NapCat', watch: '手表协议' }
+const protocolLabel = computed(() => PROTOCOL_LABELS[protocol.value] || 'NapCat')
 const loginUin = ref(props.account ? String(props.account.uin || props.account.qq || '') : '')
 const loginPassword = ref('')
 const verifyUrl = ref('')
@@ -191,7 +193,8 @@ async function start() {
   verifyUrl.value = ''
   verifyPhone.value = ''
   stage.value = 'starting'
-  message.value = protocol.value === 'napcat' ? '正在生成 QQ 二维码…' : '正在启动 AndroidPad 登录…'
+  message.value = protocol.value === 'watch' ? '正在连接手表登录服务器…'
+    : protocol.value === 'napcat' ? '正在生成 QQ 二维码…' : '正在启动 AndroidPad 登录…'
   const current = controller = new AbortController()
   await cancelSession(previous)
   try {
@@ -362,13 +365,14 @@ onBeforeUnmount(() => {
   <div class="space-y-4">
     <div class="flex items-center justify-between rounded-lg px-3 py-2 text-sm" :style="{ background: 'color-mix(in srgb, var(--theme-primary) 10%, transparent)', color: 'var(--theme-text)' }">
       <span>已添加 <strong>{{ accountCount }}</strong> 个农场账号</span>
-      <span>{{ protocol === 'pad' ? 'AndroidPad' : 'NapCat' }}</span>
+      <span>{{ protocolLabel }}</span>
     </div>
     <label v-if="!initialProtocol && !account" class="block text-sm" :style="{ color: 'var(--theme-text)' }">
       QQ 登录协议
       <select v-model="protocol" aria-label="QQ 登录协议" class="mt-1 block w-full border border-gray-300 rounded-lg p-2 dark:border-gray-600" :style="{ background: 'var(--theme-bg)', color: 'var(--theme-text)' }" :disabled="busy" @change="changeProtocol">
         <option value="napcat">NapCat（多账号扫码）</option>
         <option value="pad">AndroidPad（密码/恢复，可与 Windows QQ 共存）</option>
+        <option value="watch">手表协议（扫码，无需签名服务）</option>
       </select>
     </label>
     <template v-if="protocol === 'pad'">
@@ -397,7 +401,7 @@ onBeforeUnmount(() => {
     <div v-if="image && !saved" class="mx-auto max-w-60 w-full border border-gray-200 rounded-lg bg-white p-3">
       <img :src="image" alt="QQ 登录二维码" class="aspect-square w-full object-contain" width="224" height="224">
     </div>
-    <div v-else-if="!saved && stage !== 'success' && protocol === 'napcat'" class="mx-auto aspect-square max-w-60 w-full flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800">
+    <div v-else-if="!saved && stage !== 'success' && protocol !== 'pad'" class="mx-auto aspect-square max-w-60 w-full flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800">
       <span class="text-5xl" :class="busy ? 'i-svg-spinners-ring-resize animate-spin' : 'i-carbon-qr-code'" :style="{ color: 'var(--theme-primary)' }" />
     </div>
     <div role="status" class="rounded-lg px-3 py-3 text-center text-sm leading-6" :style="{ color: 'var(--theme-text)', background: 'color-mix(in srgb, var(--theme-primary) 10%, transparent)' }">
