@@ -380,12 +380,25 @@ class QqLoginService {
     if (this.warm && this.warm.expiresAt <= this.now()) { this.dispose(this.warm); this.warm = null; }
   }
   stopChild(item) {
-    if (!item.child || item.stopping) return;
-    item.stopping = true;
-    try { item.child.stdin.end('{"command":"shutdown"}\n'); } catch { /* pipe already closed */ }
-    const timer = setTimeout(() => { try { item.child.kill(); } catch {} }, 1500);
-    timer.unref?.();
-    item.child.once('exit', () => clearTimeout(timer));
+    if (!item.child) return;
+    if (!item.stopping) {
+      item.stopping = true;
+      try { item.child.stdin.end('{"command":"shutdown"}\n'); } catch { /* pipe already closed */ }
+    }
+    // A native host blocked in a native call ignores both the shutdown command and
+    // SIGTERM; escalate so the profile is not held by an unreachable process.
+    clearTimeout(item.killTimer);
+    item.killTimer = setTimeout(() => {
+      if (item.child?.exitCode !== null) return;
+      try { item.child.kill('SIGTERM'); } catch {}
+      item.killTimer = setTimeout(() => {
+        if (item.child?.exitCode !== null) return;
+        try { item.child.kill('SIGKILL'); } catch {}
+      }, 3000);
+      item.killTimer.unref?.();
+    }, 1500);
+    item.killTimer.unref?.();
+    item.child.once('exit', () => clearTimeout(item.killTimer));
   }
   cleanDirectory(directory) {
     if (path.resolve(path.dirname(directory)) !== path.resolve(this.dataDir, 'profiles') || !/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(path.basename(directory))) return;
@@ -513,8 +526,22 @@ class QqLoginService {
   async stopAccount(account) {
     const key = this.accountKey(account);
     this.accountGenerations.set(key, (this.accountGenerations.get(key) || 0) + 1);
-    const item = this.accountSessions.get(key);
-    if (item) { this.dispose(item); await this.shutdownForProfile(item); }
+    // A completed on-demand request removes the account session but can leave the
+    // native child tracked by its profile; that process must still be reclaimed.
+    const candidates = new Set([this.accountSessions.get(key), this.profileItem(account)]);
+    for (const item of candidates) {
+      if (!item || item.disposed) continue;
+      this.dispose(item);
+      await this.shutdownForProfile(item);
+    }
+  }
+  profileItem(account) {
+    if (!account?.qqLoginProfile) return null;
+    const profileId = String(account.qqLoginProfile);
+    const active = this.activeProfiles.get(profileId);
+    if (active) return active;
+    for (const item of this.trackedItems) if (item.profileId === profileId) return item;
+    return null;
   }
 
   async purgeAccount(account) {

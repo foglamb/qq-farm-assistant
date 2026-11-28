@@ -39,7 +39,12 @@ test('Pad restore route maps an existing account to its saved Uin without a pass
     userStore: { getUser: id => ({ id, role: 'user', card: { isPermanent: true } }) },
     requireAdminToken(req, res, next) { req.adminToken = req.headers['x-admin-token']; req.currentUser = { id: 1001, role: 'user' }; next(); },
     provider: { getAccounts: () => ({ accounts: [{ id: 7, userId: 1001, platform: 'qq', uin: '12345678', qqLoginProtocol: 'pad', qqLoginProfile: 'saved-profile', proxyMode: 'direct', proxyProfileId: null }] }) },
-    qqLogin: { create(owner, options) { created = { owner, options }; return { sessionId: 'restore-session' }; } },
+    qqLogin: {
+      // The route resolves the stored profile id to its absolute directory so the
+      // service can compare it against its own profile root.
+      profilePath: id => `/data/qq-login/profiles/${id}`,
+      create(owner, options) { created = { owner, options }; return { sessionId: 'restore-session' }; },
+    },
     resolveProxy: async () => '',
   });
   const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
@@ -47,6 +52,6 @@ test('Pad restore route maps an existing account to its saved Uin without a pass
   const response = await fetch(`http://127.0.0.1:${server.address().port}/api/qq-login/sessions`, { method: 'POST', headers: { 'x-admin-token': 'panel-token', 'content-type': 'application/json' }, body: JSON.stringify({ protocol: 'pad', targetAccountId: '7', restore: true }) });
   assert.equal(response.status, 201, JSON.stringify(await response.clone().json()));
   assert.equal(created.options.restoreUin, '12345678');
-  assert.equal(created.options.profileDirectory, 'saved-profile');
+  assert.equal(created.options.profileDirectory, '/data/qq-login/profiles/saved-profile');
   assert.equal(created.options.password, '');
 });

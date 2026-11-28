@@ -89,3 +89,36 @@ test('default resident mode retains upstream process reuse behavior', async t =>
   await service.stopAccount(account);
   assert.equal(children[1].exitCode, 0);
 });
+
+test('a helper left tracked after its account session is dropped is still reclaimed', async t => {
+  const { service, children, account, directory } = harness(t, false);
+  service.start();
+  assert.equal(await service.refreshAccountCode(account), 'fixture_ONDEMAND_CODE_1');
+  assert.equal(children[0].exitCode, 0);
+
+  // Simulate the leak: the account session map no longer references the helper,
+  // but the native child is still alive and tracked by its profile.
+  const leaked = service.launch({
+    userId: 1000, accountUserId: 1000, accountKey: service.accountKey(account),
+    targetAccountId: String(account.id), sessionIdentity: service.sessionIdentity(account),
+    restoring: true, protocol: 'napcat', profileDirectory: directory, restoreUin: '12345678',
+  });
+  service.accountSessions.delete(service.accountKey(account));
+  assert.equal(service.activeProfiles.get(account.qqLoginProfile), leaked);
+  assert.equal(leaked.child.exitCode, null);
+
+  await service.stopAccount(account);
+  assert.equal(leaked.disposed, true);
+  assert.equal(leaked.child.exitCode, 0, 'the tracked helper is shut down');
+  assert.equal(service.activeProfiles.size, 0);
+});
+
+test('stopping twice keeps a single exit path and does not leave the helper tracked', async t => {
+  const { service, account } = harness(t, true);
+  service.start();
+  assert.equal(await service.refreshAccountCode(account), 'fixture_ONDEMAND_CODE_1');
+  await service.stopAccount(account);
+  await service.stopAccount(account);
+  assert.equal(service.activeProfiles.size, 0);
+  assert.equal(service.accountSessions.size, 0);
+});
