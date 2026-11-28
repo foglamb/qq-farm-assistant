@@ -444,8 +444,5 @@ onBeforeUnmount(() => {
         {{ !proxyReady ? '重试加载' : saved ? '再扫一个账号' : protocol === 'pad' && loginMode === 'password' ? '开始登录' : '刷新二维码' }}
       </BaseButton>
     </div>
-    <div class="text-right text-xs opacity-50" :style="{ color: 'var(--theme-text)' }">
-      二改作者：foglamb
-    </div>
   </div>
 </template>

@@ -21,6 +21,13 @@ function registerAdminQqLoginRoutes({ app, requireAdminToken, qqLogin, provider,
     const restoreUin = protocol === 'pad' && req.body?.restore === true && target?.qqLoginProtocol === 'pad' ? String(target.uin || target.qq || '') : '';
     const restoreProfile = restoreUin && target?.qqLoginProfile ? String(target.qqLoginProfile) : '';
     if (req.body?.restore === true && (!restoreUin || !restoreProfile)) throw new QqScanError('当前账号没有可恢复的 AndroidPad 会话', 400, 'configuration');
+    // The service compares an absolute directory against its own profile root, so
+    // resolve the stored profile id here instead of handing over the bare id.
+    let restoreDirectory = '';
+    if (restoreProfile) {
+      try { restoreDirectory = qqLogin.profilePath(restoreProfile); }
+      catch { throw new QqScanError('当前账号的 AndroidPad 登录资料已失效，请使用 QQ 密码登录一次', 409, 'rescan'); }
+    }
     let setting;
     try { setting = proxySetting({ ...(target ? { proxyMode: target.proxyMode, proxyProfileId: target.proxyProfileId } : {}), ...req.body }); } catch { throw new QqScanError('请选择有效的代理配置'); }
     const proxyURL = await resolveProxy(setting, {
@@ -33,7 +40,7 @@ function registerAdminQqLoginRoutes({ app, requireAdminToken, qqLogin, provider,
         if (rejection) throw new QqScanError(rejection.error, 403);
       }
       if (target) getQqUpdateTarget(provider, req.currentUser.id, target.id, req.currentUser.role);
-      res.status(201).json({ ok: true, data: qqLogin.create(owner(req), { ...setting, protocol, uin: String(req.body?.uin || ''), password: req.body?.password ? String(req.body.password) : '', restoreUin, profileDirectory: restoreProfile || undefined, proxyURL, proxyBridge, nativeProxyURL: proxyBridge?.url || '', targetUserId: target?.userId ?? null, targetAccountId: target ? String(target.id) : '' }) });
+      res.status(201).json({ ok: true, data: qqLogin.create(owner(req), { ...setting, protocol, uin: String(req.body?.uin || ''), password: req.body?.password ? String(req.body.password) : '', restoreUin, profileDirectory: restoreDirectory || undefined, proxyURL, proxyBridge, nativeProxyURL: proxyBridge?.url || '', targetUserId: target?.userId ?? null, targetAccountId: target ? String(target.id) : '' }) });
     } catch (error) { proxyBridge?.close(); throw error; }
   }));
   app.post('/api/qq-login/sessions/:id/import', requireAdminToken, run(async (req, res) => res.json({ ok: true, data: await importer(req) })));
